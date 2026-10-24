@@ -217,4 +217,81 @@ public final class YouTubeMusicEngine {
             )
         }
     }
+
+    /**
+     * Resolves direct, 100% ad-free raw audio bitstream for native AVPlayer playback.
+     */
+    public func resolveStreamUrl(song: Song) async -> String? {
+        if let stream = song.streamUrl, !stream.isEmpty {
+            return stream
+        }
+
+        // 1. Invidious Direct Audio Stream Extraction
+        for base in invidiousEndpoints {
+            guard let url = URL(string: "\(base)/api/v1/videos/\(song.id)") else { continue }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 4
+            request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let adaptive = json["adaptiveFormats"] as? [[String: Any]] else { continue }
+
+                var bestUrl: String? = nil
+                var bestBitrate: Int = 0
+
+                for item in adaptive {
+                    let type = item["type"] as? String ?? ""
+                    let container = item["container"] as? String ?? ""
+                    if type.hasPrefix("audio/") || container == "m4a" {
+                        let bitrate = item["bitrate"] as? Int ?? 0
+                        let streamUrl = item["url"] as? String
+                        if let streamUrl = streamUrl, !streamUrl.isEmpty, bitrate >= bestBitrate {
+                            bestBitrate = bitrate
+                            bestUrl = streamUrl
+                        }
+                    }
+                }
+
+                if let bestUrl = bestUrl {
+                    return bestUrl
+                }
+            } catch {
+                continue
+            }
+        }
+
+        // 2. Piped API Stream Extraction Fallback
+        let pipedEndpoints = [
+            "https://pipedapi.kavin.rocks",
+            "https://api.piped.privacy.com.de"
+        ]
+        for base in pipedEndpoints {
+            guard let url = URL(string: "\(base)/streams/\(song.id)") else { continue }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 3
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let audioStreams = json["audioStreams"] as? [[String: Any]] else { continue }
+
+                for item in audioStreams {
+                    let format = item["format"] as? String ?? ""
+                    if format.contains("M4A") || format.contains("MP4") {
+                        if let streamUrl = item["url"] as? String, !streamUrl.isEmpty {
+                            return streamUrl
+                        }
+                    }
+                }
+            } catch {
+                continue
+            }
+        }
+
+        return nil
+    }
 }

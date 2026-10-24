@@ -40,18 +40,23 @@ import com.auramusic.app.ui.theme.AuraSurfaceLight
 import com.auramusic.app.ui.theme.AuraTextPrimary
 import com.auramusic.app.ui.theme.AuraTextSecondary
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.auramusic.app.player.PlaybackManager
+
 @Composable
 fun PlayerBar(
     currentSong: Song?,
     isPlaying: Boolean,
-    progressMs: Long,
-    durationMs: Long,
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
     onClickBar: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (currentSong == null) return
+
+    val progressMs by PlaybackManager.currentPositionMs.collectAsState()
+    val durationMs by PlaybackManager.durationMs.collectAsState()
 
     val progressFraction = if (durationMs > 0) {
         (progressMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)

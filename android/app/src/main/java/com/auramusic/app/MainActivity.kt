@@ -71,8 +71,6 @@ fun AuraAppRoot() {
 
     val currentSong by PlaybackManager.currentSong.collectAsState()
     val isPlaying by PlaybackManager.isPlaying.collectAsState()
-    val progressMs by PlaybackManager.currentPositionMs.collectAsState()
-    val durationMs by PlaybackManager.durationMs.collectAsState()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -160,8 +158,6 @@ fun AuraAppRoot() {
                 PlayerBar(
                     currentSong = currentSong,
                     isPlaying = isPlaying,
-                    progressMs = progressMs,
-                    durationMs = durationMs,
                     onTogglePlay = { PlaybackManager.togglePlayPause() },
                     onSkipNext = { PlaybackManager.skipNext() },
                     onClickBar = { showNowPlaying = true },

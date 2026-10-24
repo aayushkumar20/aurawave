@@ -21,12 +21,14 @@
 		CC9924345CC8CAC2E32059D2 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0322972005A3B1BB0F21A3D6 /* SearchView.swift */; };
 		D10C6736155FF0B824AFD4BF /* PlayerBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F5C8B698785ACC21DED82D /* PlayerBarView.swift */; };
 		F1A4F1334AC87E8F60B54BF0 /* AudioPlayerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48AF543B9B7CEB41394A39DF /* AudioPlayerService.swift */; };
+		F405E42479A35BAA4D42AA11 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CBDC715ECED5C830EDA5D36 /* Theme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0322972005A3B1BB0F21A3D6 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		16EB8E0600AA52587275BE4B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		17E23CE49E6E20A7373130DE /* AuraMusicApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuraMusicApp.swift; sourceTree = "<group>"; };
+		1CBDC715ECED5C830EDA5D36 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		3B6DF610CD929167B15751C8 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
 		48AF543B9B7CEB41394A39DF /* AudioPlayerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerService.swift; sourceTree = "<group>"; };
 		5C5AEE90348FA0D233E6FF29 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -43,6 +45,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		794199A4DFEF746483059374 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				1CBDC715ECED5C830EDA5D36 /* Theme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
 		80D8AE1A1290D7F225C123D7 /* AuraMusic */ = {
 			isa = PBXGroup;
 			children = (
@@ -50,6 +60,7 @@
 				5C5AEE90348FA0D233E6FF29 /* Info.plist */,
 				AC6556F111AA3E4B389C4EC0 /* Models */,
 				8B3EED6B4F30BBBE437B7B16 /* Services */,
+				794199A4DFEF746483059374 /* Theme */,
 				B2BB9B659F1380E34DB5FF9D /* Views */,
 			);
 			path = AuraMusic;
@@ -183,6 +194,7 @@
 				D10C6736155FF0B824AFD4BF /* PlayerBarView.swift in Sources */,
 				CC9924345CC8CAC2E32059D2 /* SearchView.swift in Sources */,
 				344299B87A43DEF4987EB613 /* SongRowView.swift in Sources */,
+				F405E42479A35BAA4D42AA11 /* Theme.swift in Sources */,
 				812463D32A90610FC3CBFC74 /* VisualizerView.swift in Sources */,
 				B394A25386E437C7289C684C /* YouTubeMusicEngine.swift in Sources */,
 			);

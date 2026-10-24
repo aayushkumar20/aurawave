@@ -174,7 +174,7 @@ public struct HomeView: View {
                         }
                     }
 
-                    Spacer().frame(height: 100)
+                    Spacer().frame(height: 140)
                 }
             }
         }

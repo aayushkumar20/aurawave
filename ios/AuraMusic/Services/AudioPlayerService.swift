@@ -1,14 +1,24 @@
 import Foundation
-import WebKit
+import AVFoundation
 import MediaPlayer
+import WebKit
 import Combine
+import SwiftUI
 
 public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
     public static let shared = AudioPlayerService()
 
-    private var webView: WKWebView?
+    // Native CoreAudio Engine
+    private var avPlayer: AVPlayer?
+    private var timeObserverToken: Any?
+    private var playerItemContext = 0
+    private var isUsingAVPlayer: Bool = false
+
+    // WebKit Fallback Player
+    public var webView: WKWebView?
     private var isWebViewReady = false
 
+    // App & Playback State
     @Published public var currentSong: Song?
     @Published public var isPlaying: Bool = false
     @Published public var currentTime: Double = 0
@@ -24,13 +34,41 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
 
     private override init() {
         super.init()
-        setupBackgroundPlayer()
         configureAudioSession()
+        setupBackgroundWebView()
         setupRemoteCommandCenter()
         loadLiveTrending()
     }
 
-    private func setupBackgroundPlayer() {
+    deinit {
+        if let token = timeObserverToken {
+            avPlayer?.removeTimeObserver(token)
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Audio Session: Guaranteed Speaker / AirPods Output
+    // -------------------------------------------------------------
+    public func configureAudioSession() {
+        #if os(iOS)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(
+                .playback,
+                mode: .default,
+                options: [.allowAirPlay, .allowBluetoothA2DP, .defaultToSpeaker]
+            )
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("[Aura Audio] Failed to configure AVAudioSession: \(error)")
+        }
+        #endif
+    }
+
+    // -------------------------------------------------------------
+    // WebKit Fallback Setup
+    // -------------------------------------------------------------
+    private func setupBackgroundWebView() {
         let config = WKWebViewConfiguration()
         #if os(iOS)
         config.allowsInlineMediaPlayback = true
@@ -40,7 +78,7 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         contentController.add(self, name: "audioBridge")
         config.userContentController = contentController
 
-        let wv = WKWebView(frame: .zero, configuration: config)
+        let wv = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: config)
         wv.navigationDelegate = self
         self.webView = wv
 
@@ -57,8 +95,8 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         var player;
         function onYouTubeIframeAPIReady() {
           player = new YT.Player('player', {
-            height: '100%',
-            width: '100%',
+            height: '1',
+            width: '1',
             playerVars: {
               autoplay: 1,
               controls: 0,
@@ -103,11 +141,8 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
             switch type {
             case "READY":
                 self.isWebViewReady = true
-                if let song = self.currentSong {
-                    self.playSong(song)
-                }
             case "STATE":
-                if let state = dict["state"] as? Int {
+                if !self.isUsingAVPlayer, let state = dict["state"] as? Int {
                     if state == 1 { // Playing
                         self.isPlaying = true
                     } else if state == 2 { // Paused
@@ -122,12 +157,14 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
                     }
                 }
             case "PROGRESS":
-                if let cur = dict["current"] as? Double,
-                   let dur = dict["duration"] as? Double {
-                    self.currentTime = cur
-                    if dur > 0 { self.duration = dur }
-                    if let song = self.currentSong {
-                        self.updateNowPlayingInfo(song: song)
+                if !self.isUsingAVPlayer {
+                    if let cur = dict["current"] as? Double,
+                       let dur = dict["duration"] as? Double {
+                        self.currentTime = cur
+                        if dur > 0 { self.duration = dur }
+                        if let song = self.currentSong {
+                            self.updateNowPlayingInfo(song: song)
+                        }
                     }
                 }
             default:
@@ -136,6 +173,9 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         }
     }
 
+    // -------------------------------------------------------------
+    // Live Trending Music Fetcher
+    // -------------------------------------------------------------
     public func loadLiveTrending() {
         isLoadingTrending = true
         Task { @MainActor in
@@ -149,53 +189,12 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         }
     }
 
-    private func configureAudioSession() {
-        #if os(iOS)
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("Failed to configure AVAudioSession: \(error)")
-        }
-        #endif
-    }
-
-    private func setupRemoteCommandCenter() {
-        let commandCenter = MPRemoteCommandCenter.shared()
-
-        commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.togglePlayPause()
-            return .success
-        }
-
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.togglePlayPause()
-            return .success
-        }
-
-        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            self?.skipNext()
-            return .success
-        }
-
-        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            self?.skipPrevious()
-            return .success
-        }
-
-        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
-            if let posEvent = event as? MPChangePlaybackPositionCommandEvent {
-                self?.seek(to: posEvent.positionTime)
-                return .success
-            }
-            return .commandFailed
-        }
-    }
-
-    /**
-     * Plays 100% COMPLETE Full YouTube Song
-     */
+    // -------------------------------------------------------------
+    // Playback Controls (100% COMPLETE FULL SONGS WITH REAL SOUND)
+    // -------------------------------------------------------------
     public func playSong(_ song: Song) {
+        configureAudioSession()
+
         if let idx = queue.firstIndex(where: { $0.id == song.id }) {
             currentIndex = idx
         } else {
@@ -204,11 +203,143 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         }
 
         currentSong = song
-        let videoId = song.id
-        webView?.evaluateJavaScript("if (player && player.loadVideoById) { player.loadVideoById('\(videoId)'); player.playVideo(); }")
+        currentTime = 0
+        duration = song.durationSeconds > 0 ? song.durationSeconds : 210
         isPlaying = true
-        duration = song.durationSeconds
         updateNowPlayingInfo(song: song)
+
+        // 1. First Attempt: Native direct hardware AVPlayer stream
+        Task { @MainActor in
+            if let streamUrlString = await YouTubeMusicEngine.shared.resolveStreamUrl(song: song),
+               let streamUrl = URL(string: streamUrlString) {
+                self.playWithAVPlayer(url: streamUrl, song: song)
+            } else {
+                // 2. Fallback: WebKit embedded YouTube Player
+                self.playWithWebView(song: song)
+            }
+        }
+    }
+
+    private func playWithAVPlayer(url: URL, song: Song) {
+        // Clean up prior player
+        if let token = timeObserverToken {
+            avPlayer?.removeTimeObserver(token)
+            timeObserverToken = nil
+        }
+        avPlayer?.pause()
+
+        let asset = AVURLAsset(url: url)
+        let playerItem = AVPlayerItem(asset: asset)
+
+        NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(playerItemDidReachEnd),
+            name: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem
+        )
+
+        let player = AVPlayer(playerItem: playerItem)
+        player.automaticallyWaitsToMinimizeStalling = true
+        self.avPlayer = player
+        self.isUsingAVPlayer = true
+
+        // Periodic time observer
+        let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard let self = self, self.isUsingAVPlayer else { return }
+            let sec = time.seconds
+            if !sec.isNaN && !sec.isInfinite {
+                self.currentTime = sec
+                if let currentItem = self.avPlayer?.currentItem {
+                    let itemDur = currentItem.duration.seconds
+                    if !itemDur.isNaN && !itemDur.isInfinite && itemDur > 0 {
+                        self.duration = itemDur
+                    }
+                }
+                self.updateNowPlayingInfo(song: song)
+            }
+        }
+
+        player.play()
+        self.isPlaying = true
+    }
+
+    private func playWithWebView(song: Song) {
+        self.isUsingAVPlayer = false
+        let videoId = song.id
+        webView?.evaluateJavaScript("""
+        if (player && player.loadVideoById) {
+            player.loadVideoById('\(videoId)');
+            player.playVideo();
+        }
+        """)
+    }
+
+    @objc private func playerItemDidReachEnd() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.repeatMode == .one {
+                self.seek(to: 0)
+                self.avPlayer?.play()
+            } else {
+                self.skipNext()
+            }
+        }
+    }
+
+    public func togglePlayPause() {
+        if isPlaying {
+            pause()
+        } else {
+            play()
+        }
+    }
+
+    public func play() {
+        configureAudioSession()
+        if isUsingAVPlayer {
+            avPlayer?.play()
+        } else {
+            webView?.evaluateJavaScript("if (player && player.playVideo) { player.playVideo(); }")
+        }
+        isPlaying = true
+    }
+
+    public func pause() {
+        if isUsingAVPlayer {
+            avPlayer?.pause()
+        } else {
+            webView?.evaluateJavaScript("if (player && player.pauseVideo) { player.pauseVideo(); }")
+        }
+        isPlaying = false
+    }
+
+    public func seek(to seconds: Double) {
+        currentTime = seconds
+        if isUsingAVPlayer {
+            let targetTime = CMTime(seconds: seconds, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+            avPlayer?.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        } else {
+            webView?.evaluateJavaScript("if (player && player.seekTo) { player.seekTo(\(seconds), true); }")
+        }
+        if let song = currentSong {
+            updateNowPlayingInfo(song: song)
+        }
+    }
+
+    public func skipNext() {
+        guard !queue.isEmpty else { return }
+        let nextIdx = isShuffleEnabled ? Int.random(in: 0..<queue.count) : (currentIndex + 1) % queue.count
+        currentIndex = nextIdx
+        playSong(queue[nextIdx])
+    }
+
+    public func skipPrevious() {
+        guard !queue.isEmpty else { return }
+        let prevIdx = currentIndex - 1 < 0 ? queue.count - 1 : currentIndex - 1
+        currentIndex = prevIdx
+        playSong(queue[prevIdx])
     }
 
     public func playNext(_ song: Song) {
@@ -224,40 +355,6 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
             queue.remove(at: idx)
         }
         queue.append(song)
-    }
-
-    public func togglePlayPause() {
-        if isPlaying {
-            webView?.evaluateJavaScript("if (player && player.pauseVideo) { player.pauseVideo(); }")
-            isPlaying = false
-        } else {
-            webView?.evaluateJavaScript("if (player && player.playVideo) { player.playVideo(); }")
-            isPlaying = true
-        }
-    }
-
-    /**
-     * Exact seeking across full song (e.g. at 1 min)
-     */
-    public func seek(to seconds: Double) {
-        currentTime = seconds
-        webView?.evaluateJavaScript("if (player && player.seekTo) { player.seekTo(\(seconds), true); }")
-    }
-
-    public func skipNext() {
-        guard !queue.isEmpty else { return }
-        let nextIdx = isShuffleEnabled ? Int.random(in: 0..<queue.count) : (currentIndex + 1) % queue.count
-        currentIndex = nextIdx
-        let nextSong = queue[nextIdx]
-        playSong(nextSong)
-    }
-
-    public func skipPrevious() {
-        guard !queue.isEmpty else { return }
-        let prevIdx = currentIndex - 1 < 0 ? queue.count - 1 : currentIndex - 1
-        currentIndex = prevIdx
-        let prevSong = queue[prevIdx]
-        playSong(prevSong)
     }
 
     public func toggleShuffle() {
@@ -281,24 +378,91 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
     }
 
     public func createPlaylist(name: String, description: String = "") {
-        let cover = currentSong?.thumbnailUrl ?? "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
-        let pl = Playlist(
-            id: "pl_\(Int(Date().timeIntervalSince1970))",
+        let newPl = Playlist(
+            id: "pl_" + UUID().uuidString.prefix(8),
             name: name,
             description: description,
-            coverUrl: cover,
+            coverUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300",
             songs: []
         )
-        playlists.append(pl)
+        playlists.append(newPl)
+    }
+
+    public func addSongToPlaylist(playlistId: String, song: Song) {
+        if let idx = playlists.firstIndex(where: { $0.id == playlistId }) {
+            if !playlists[idx].songs.contains(where: { $0.id == song.id }) {
+                playlists[idx].songs.append(song)
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Lock-Screen Now Playing Controls
+    // -------------------------------------------------------------
+    private func setupRemoteCommandCenter() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.play()
+            return .success
+        }
+
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.pause()
+            return .success
+        }
+
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            self?.skipNext()
+            return .success
+        }
+
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            self?.skipPrevious()
+            return .success
+        }
+
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            if let posEvent = event as? MPChangePlaybackPositionCommandEvent {
+                self?.seek(to: posEvent.positionTime)
+                return .success
+            }
+            return .commandFailed
+        }
     }
 
     private func updateNowPlayingInfo(song: Song) {
-        var nowPlayingInfo = [String: Any]()
-        nowPlayingInfo[MPMediaItemPropertyTitle] = song.title
-        nowPlayingInfo[MPMediaItemPropertyArtist] = song.artist
-        nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = song.album
-        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
-        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: song.title,
+            MPMediaItemPropertyArtist: song.artist,
+            MPMediaItemPropertyAlbumTitle: song.album,
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+        ]
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
+}
+
+// -------------------------------------------------------------
+// Invisible WebKit Background View Representable
+// -------------------------------------------------------------
+public struct YouTubeBackgroundPlayerView: UIViewRepresentable {
+    public init() {}
+
+    public func makeUIView(context: Context) -> UIView {
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        container.isUserInteractionEnabled = false
+        container.alpha = 0.01
+
+        if let wv = AudioPlayerService.shared.webView {
+            wv.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+            container.addSubview(wv)
+        }
+
+        return container
+    }
+
+    public func updateUIView(_ uiView: UIView, context: Context) {}
 }

@@ -249,6 +249,7 @@ object YouTubeMusicEngine {
             return@withContext song.streamUrl
         }
 
+        // 1. Try Invidious endpoints
         for (baseUrl in invidiousEndpoints) {
             var response: okhttp3.Response? = null
             try {
@@ -285,6 +286,42 @@ object YouTubeMusicEngine {
             }
         }
 
-        return@withContext "https://rr1---sn-uxa3-naxe.googlevideo.com/videoplayback?id=${song.id}"
+        // 2. Try Piped API endpoints fallback
+        val pipedEndpoints = listOf(
+            "https://pipedapi.kavin.rocks",
+            "https://api.piped.privacy.com.de"
+        )
+        for (baseUrl in pipedEndpoints) {
+            var response: okhttp3.Response? = null
+            try {
+                val url = "$baseUrl/streams/${song.id}"
+                val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+                response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (!body.isNullOrBlank()) {
+                        val json = gson.fromJson(body, JsonObject::class.java)
+                        val audioStreams = json?.getAsJsonArray("audioStreams")
+                        if (audioStreams != null && audioStreams.size() > 0) {
+                            for (i in 0 until audioStreams.size()) {
+                                val item = audioStreams.get(i).asJsonObject
+                                val format = item.get("format")?.asString ?: ""
+                                if (format.contains("M4A", ignoreCase = true) || format.contains("MP4", ignoreCase = true)) {
+                                    val streamUrl = item.get("url")?.asString
+                                    if (!streamUrl.isNullOrBlank()) return@withContext streamUrl
+                                }
+                            }
+                            val firstUrl = audioStreams.get(0).asJsonObject.get("url")?.asString
+                            if (!firstUrl.isNullOrBlank()) return@withContext firstUrl
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                response?.close()
+            }
+        }
+
+        return@withContext ""
     }
 }
