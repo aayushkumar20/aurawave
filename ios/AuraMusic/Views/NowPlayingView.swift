@@ -18,66 +18,72 @@ public struct NowPlayingView: View {
     public var body: some View {
         if let song = player.currentSong {
             GeometryReader { geo in
+                let screenWidth = geo.size.width
+                let screenHeight = geo.size.height
+
                 ZStack {
-                    // Dynamic ambient glowing background
-                    ambientBackground(song: song)
+                    // Ambient Blurred Artwork Background (CLIPPED TO EXACT SCREEN BOUNDS)
+                    ambientBackground(song: song, width: screenWidth, height: screenHeight)
 
                     VStack(spacing: 0) {
-                        // Drag Indicator Capsule & Top Bar
-                        VStack(spacing: 8) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.3))
-                                .frame(width: 38, height: 5)
-                                .padding(.top, 10)
+                        // Top Drag Indicator Bar
+                        Capsule()
+                            .fill(Color.white.opacity(0.35))
+                            .frame(width: 36, height: 4)
+                            .padding(.top, 8)
+                            .padding(.bottom, 6)
 
-                            topBar(song: song)
-                                .padding(.horizontal, 24)
-                                .padding(.bottom, 8)
-                        }
+                        // Top Navigation Bar
+                        topBar(song: song)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 8)
 
                         if showQueueList {
                             queueListView
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
                         } else {
-                            mainPlayerContent(song: song, availableHeight: geo.size.height)
-                                .transition(.move(edge: .leading).combined(with: .opacity))
+                            mainPlayerContent(song: song, width: screenWidth, height: screenHeight)
                         }
                     }
+                    .frame(width: screenWidth, height: screenHeight)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: screenWidth, height: screenHeight)
+                .clipped()
             }
             .preferredColorScheme(.dark)
         }
     }
 
     // -------------------------------------------------------------
-    // Ambient Animated Background Glow
+    // Ambient Background (Strictly Clipped, No Horizontal Overflow)
     // -------------------------------------------------------------
-    private func ambientBackground(song: Song) -> some View {
+    private func ambientBackground(song: Song, width: CGFloat, height: CGFloat) -> some View {
         ZStack {
-            AuraColors.background.ignoresSafeArea()
+            AuraColors.background
 
             AsyncImage(url: URL(string: song.thumbnailUrl)) { img in
                 img.resizable()
                     .aspectRatio(contentMode: .fill)
-                    .blur(radius: 70)
-                    .opacity(0.35)
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .blur(radius: 60)
+                    .opacity(0.3)
             } placeholder: {
                 Color.clear
             }
-            .ignoresSafeArea()
 
             LinearGradient(
                 colors: [
-                    AuraColors.background.opacity(0.3),
+                    AuraColors.background.opacity(0.35),
                     AuraColors.background.opacity(0.85),
                     AuraColors.background
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .ignoresSafeArea()
         }
+        .frame(width: width, height: height)
+        .clipped()
+        .ignoresSafeArea()
     }
 
     // -------------------------------------------------------------
@@ -89,18 +95,18 @@ public struct NowPlayingView: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 38, height: 38)
-                    .background(Color.white.opacity(0.08))
+                    .frame(width: 36, height: 36)
+                    .background(Color.white.opacity(0.1))
                     .clipShape(Circle())
             }
 
             Spacer()
 
             VStack(spacing: 2) {
-                Text("PLAYING FROM YOUTUBE")
+                Text("NOW PLAYING")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(AuraColors.textMuted)
-                    .tracking(1.4)
+                    .tracking(1.5)
                 Text(showQueueList ? "Up Next Queue" : song.album)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(AuraColors.cyan)
@@ -117,23 +123,25 @@ public struct NowPlayingView: View {
                 Image(systemName: showQueueList ? "music.note" : "list.bullet")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(showQueueList ? AuraColors.cyan : .white)
-                    .frame(width: 38, height: 38)
-                    .background(Color.white.opacity(0.08))
+                    .frame(width: 36, height: 36)
+                    .background(Color.white.opacity(0.1))
                     .clipShape(Circle())
             }
         }
     }
 
     // -------------------------------------------------------------
-    // Main Player View
+    // Main Player Content (Pixel-Perfect, Perfectly Centered)
     // -------------------------------------------------------------
-    private func mainPlayerContent(song: Song, availableHeight: CGFloat) -> some View {
-        let artworkSize: CGFloat = max(180, min(availableHeight * 0.35, 290))
+    private func mainPlayerContent(song: Song, width: CGFloat, height: CGFloat) -> some View {
+        // Dynamically compute artwork size so it NEVER pushes controls off screen
+        let maxArtSize = min(width - 80, height * 0.33)
+        let artworkSize: CGFloat = max(160, min(maxArtSize, 260))
 
         return VStack(spacing: 0) {
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
 
-            // Album Artwork with Shadow & Border
+            // Centered Album Artwork
             ZStack {
                 AsyncImage(url: URL(string: song.thumbnailUrl)) { img in
                     img.resizable()
@@ -142,11 +150,11 @@ public struct NowPlayingView: View {
                     AuraColors.surfaceLight
                 }
                 .frame(width: artworkSize, height: artworkSize)
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .shadow(color: AuraColors.primary.opacity(0.4), radius: 26, y: 12)
+                .clipShape(RoundedRectangle(cornerRadius: 22))
+                .shadow(color: AuraColors.primary.opacity(0.45), radius: 24, y: 10)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 22)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
                 )
 
                 // Playing Visualizer Badge
@@ -156,47 +164,48 @@ public struct NowPlayingView: View {
                         HStack {
                             Spacer()
                             VisualizerView(isPlaying: true, barCount: 4)
-                                .padding(8)
-                                .background(Color.black.opacity(0.6))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .padding(12)
+                                .padding(6)
+                                .background(Color.black.opacity(0.65))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .padding(10)
                         }
                     }
                     .frame(width: artworkSize, height: artworkSize)
                 }
             }
+            .frame(width: width)
 
-            Spacer(minLength: 16)
+            Spacer(minLength: 12)
 
-            // Track Title, Artist & Action Icons Row
+            // Track Title, Artist, & Actions
             HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(song.title)
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.white)
                         .lineLimit(1)
                     Text(song.artist)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundColor(AuraColors.textSecondary)
                         .lineLimit(1)
                 }
 
                 Spacer()
 
-                // Share to Chat Button
+                // Share to Chat
                 Button(action: {
                     onDismiss()
                     onNavigateToChat()
                 }) {
                     Image(systemName: "bubble.left.and.bubble.right.fill")
-                        .font(.system(size: 17))
+                        .font(.system(size: 16))
                         .foregroundColor(AuraColors.cyan)
-                        .frame(width: 42, height: 42)
+                        .frame(width: 38, height: 38)
                         .background(Color.white.opacity(0.08))
                         .clipShape(Circle())
                 }
 
-                // Favorite Heart Button
+                // Favorite
                 Button(action: {
                     player.toggleFavorite(song)
                     heartBounce = true
@@ -205,40 +214,34 @@ public struct NowPlayingView: View {
                     }
                 }) {
                     Image(systemName: player.favorites.contains(song.id) ? "heart.fill" : "heart")
-                        .font(.system(size: 20))
+                        .font(.system(size: 19))
                         .foregroundColor(player.favorites.contains(song.id) ? AuraColors.pink : AuraColors.textMuted)
-                        .scaleEffect(heartBounce ? 1.3 : 1.0)
+                        .scaleEffect(heartBounce ? 1.25 : 1.0)
                         .animation(.spring(response: 0.25, dampingFraction: 0.5), value: heartBounce)
-                        .frame(width: 42, height: 42)
+                        .frame(width: 38, height: 38)
                         .background(Color.white.opacity(0.08))
                         .clipShape(Circle())
                 }
             }
-            .padding(.horizontal, 28)
+            .padding(.horizontal, 24)
+            .frame(width: width)
 
-            Spacer(minLength: 14)
+            Spacer(minLength: 10)
 
-            // ROCK-SOLID CUSTOM SMOOTH SEEKING SLIDER (ZERO JITTER, ZERO SNAP-BACK)
-            customScrubberView
-                .padding(.horizontal, 28)
+            // Smooth Seeking Scrubber
+            customScrubberView(width: width - 48)
+                .frame(width: width - 48)
 
-            Spacer(minLength: 16)
+            Spacer(minLength: 12)
 
-            // Primary Playback Controls Row
+            // Playback Controls Row
             HStack(alignment: .center) {
                 // Shuffle
                 Button(action: { player.toggleShuffle() }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: "shuffle")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(player.isShuffleEnabled ? AuraColors.cyan : AuraColors.textMuted)
-                        if player.isShuffleEnabled {
-                            Circle().fill(AuraColors.cyan).frame(width: 4, height: 4)
-                        } else {
-                            Circle().fill(Color.clear).frame(width: 4, height: 4)
-                        }
-                    }
-                    .frame(width: 44, height: 44)
+                    Image(systemName: "shuffle")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(player.isShuffleEnabled ? AuraColors.cyan : AuraColors.textMuted)
+                        .frame(width: 44, height: 44)
                 }
 
                 Spacer()
@@ -248,12 +251,12 @@ public struct NowPlayingView: View {
                     Image(systemName: "backward.fill")
                         .font(.system(size: 24))
                         .foregroundColor(.white)
-                        .frame(width: 46, height: 46)
+                        .frame(width: 44, height: 44)
                 }
 
                 Spacer()
 
-                // Glowing Hero Play / Pause
+                // Large Glowing Play / Pause Button
                 Button(action: { player.togglePlayPause() }) {
                     ZStack {
                         Circle()
@@ -264,11 +267,11 @@ public struct NowPlayingView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 70, height: 70)
-                            .shadow(color: AuraColors.primary.opacity(0.55), radius: 18, y: 6)
+                            .frame(width: 66, height: 66)
+                            .shadow(color: AuraColors.primary.opacity(0.55), radius: 16, y: 6)
 
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 28, weight: .bold))
+                            .font(.system(size: 26, weight: .bold))
                             .foregroundColor(.white)
                             .offset(x: player.isPlaying ? 0 : 2)
                     }
@@ -282,126 +285,115 @@ public struct NowPlayingView: View {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 24))
                         .foregroundColor(.white)
-                        .frame(width: 46, height: 46)
+                        .frame(width: 44, height: 44)
                 }
 
                 Spacer()
 
                 // Repeat Mode
                 Button(action: { player.cycleRepeatMode() }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(player.repeatMode != .off ? AuraColors.cyan : AuraColors.textMuted)
-                        if player.repeatMode != .off {
-                            Circle().fill(AuraColors.cyan).frame(width: 4, height: 4)
-                        } else {
-                            Circle().fill(Color.clear).frame(width: 4, height: 4)
-                        }
-                    }
-                    .frame(width: 44, height: 44)
+                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(player.repeatMode != .off ? AuraColors.cyan : AuraColors.textMuted)
+                        .frame(width: 44, height: 44)
                 }
             }
             .padding(.horizontal, 24)
+            .frame(width: width)
 
-            Spacer(minLength: 20)
+            Spacer(minLength: 14)
 
-            // Audio Output Indicator
-            HStack(spacing: 6) {
+            // Audio Quality Badge
+            HStack(spacing: 5) {
                 Image(systemName: "speaker.wave.3.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundColor(AuraColors.cyan)
-                Text("Aura Lossless Audio • 100% Ad-Free")
+                Text("Aura Live Music • 100% Ad-Free")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(AuraColors.textMuted)
             }
-            .padding(.bottom, 20)
+            .padding(.bottom, 16)
         }
+        .frame(width: width)
     }
 
     // -------------------------------------------------------------
-    // Rock-Solid Custom Scrubber View (100% Smooth Dragging)
+    // Custom Scrubber View (Bound to Exact Explicit Width)
     // -------------------------------------------------------------
-    private var customScrubberView: some View {
-        GeometryReader { scrubGeo in
-            let totalWidth = scrubGeo.size.width
-            let dur = max(player.duration, 1.0)
-            let activeTime = isDraggingSlider ? dragSliderValue : player.currentTime
-            let clampedTime = max(0, min(activeTime, dur))
-            let fraction = CGFloat(clampedTime / dur)
-            let fillWidth = max(0, min(fraction * totalWidth, totalWidth))
+    private func customScrubberView(width: CGFloat) -> some View {
+        let dur = max(player.duration, 1.0)
+        let activeTime = isDraggingSlider ? dragSliderValue : player.currentTime
+        let clampedTime = max(0, min(activeTime, dur))
+        let fraction = CGFloat(clampedTime / dur)
+        let fillWidth = max(0, min(fraction * width, width))
 
-            VStack(spacing: 8) {
-                // Scrubber Track
-                ZStack(alignment: .leading) {
-                    // Background Track
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.white.opacity(0.12))
-                        .frame(height: 5)
+        return VStack(spacing: 6) {
+            ZStack(alignment: .leading) {
+                // Background Track
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.white.opacity(0.12))
+                    .frame(width: width, height: 4)
 
-                    // Active Progress Track
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(
-                            LinearGradient(
-                                colors: [AuraColors.primary, AuraColors.cyan],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
+                // Active Progress Fill
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(
+                        LinearGradient(
+                            colors: [AuraColors.primary, AuraColors.cyan],
+                            startPoint: .leading,
+                            endPoint: .trailing
                         )
-                        .frame(width: fillWidth, height: 5)
+                    )
+                    .frame(width: fillWidth, height: 4)
 
-                    // Glowing Scrubber Thumb
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: isDraggingSlider ? 18 : 12, height: isDraggingSlider ? 18 : 12)
-                        .shadow(color: AuraColors.cyan.opacity(0.8), radius: isDraggingSlider ? 8 : 4)
-                        .offset(x: max(0, min(fillWidth - (isDraggingSlider ? 9 : 6), totalWidth - (isDraggingSlider ? 18 : 12))))
-                        .animation(.interactiveSpring(response: 0.15), value: isDraggingSlider)
-                }
-                .frame(height: 28)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { gesture in
-                            if !isDraggingSlider {
-                                isDraggingSlider = true
-                                player.isScrubbing = true
-                            }
-                            let touchX = max(0, min(gesture.location.x, totalWidth))
-                            let newFraction = Double(touchX / totalWidth)
-                            dragSliderValue = newFraction * dur
-                        }
-                        .onEnded { gesture in
-                            let touchX = max(0, min(gesture.location.x, totalWidth))
-                            let finalFraction = Double(touchX / totalWidth)
-                            let finalSec = finalFraction * dur
-                            dragSliderValue = finalSec
-                            player.seek(to: finalSec)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                isDraggingSlider = false
-                                player.isScrubbing = false
-                            }
-                        }
-                )
-
-                // Time Labels
-                HStack {
-                    Text(formatTime(clampedTime))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundColor(AuraColors.textMuted)
-                    Spacer()
-                    let remaining = max(0, dur - clampedTime)
-                    Text("-\(formatTime(remaining))")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundColor(AuraColors.textMuted)
-                }
+                // Scrubber Thumb
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: isDraggingSlider ? 16 : 12, height: isDraggingSlider ? 16 : 12)
+                    .shadow(color: AuraColors.cyan.opacity(0.8), radius: isDraggingSlider ? 6 : 3)
+                    .offset(x: max(0, min(fillWidth - (isDraggingSlider ? 8 : 6), width - (isDraggingSlider ? 16 : 12))))
             }
+            .frame(width: width, height: 26)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        if !isDraggingSlider {
+                            isDraggingSlider = true
+                            player.isScrubbing = true
+                        }
+                        let touchX = max(0, min(gesture.location.x, width))
+                        let newFraction = Double(touchX / width)
+                        dragSliderValue = newFraction * dur
+                    }
+                    .onEnded { gesture in
+                        let touchX = max(0, min(gesture.location.x, width))
+                        let finalFraction = Double(touchX / width)
+                        let finalSec = finalFraction * dur
+                        dragSliderValue = finalSec
+                        player.seek(to: finalSec)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            isDraggingSlider = false
+                            player.isScrubbing = false
+                        }
+                    }
+            )
+
+            // Current Time & Duration Labels
+            HStack {
+                Text(formatTime(clampedTime))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(AuraColors.textMuted)
+                Spacer()
+                Text(formatTime(dur))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(AuraColors.textMuted)
+            }
+            .frame(width: width)
         }
-        .frame(height: 48)
     }
 
     // -------------------------------------------------------------
-    // Up Next Queue List View
+    // Queue List View
     // -------------------------------------------------------------
     private var queueListView: some View {
         VStack(alignment: .leading, spacing: 12) {

@@ -14,7 +14,8 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
 
     // WebKit Real-Time YouTube Audio Engine
     public var webView: WKWebView?
-    private var pendingSongId: String? = nil
+    private var isWebViewReady: Bool = false
+    private var queuedVideoId: String? = nil
 
     // App & Playback State
     @Published public var currentSong: Song?
@@ -42,22 +43,24 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
     }
 
     // -------------------------------------------------------------
-    // Guaranteed Audio Session Configuration
+    // Audio Session: Guaranteed Speaker / AirPods Output (Async)
     // -------------------------------------------------------------
     public func configureAudioSession() {
         #if os(iOS)
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, policy: .default, options: [])
-            try session.setActive(true)
-        } catch {
-            print("[Aura Audio] Failed to configure AVAudioSession: \(error)")
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .default, policy: .default, options: [])
+                try session.setActive(true)
+            } catch {
+                print("[Aura Audio] Failed to configure AVAudioSession: \(error)")
+            }
         }
         #endif
     }
 
     // -------------------------------------------------------------
-    // WebKit Setup
+    // WebKit Setup with YouTube Official IFrame API
     // -------------------------------------------------------------
     private func setupBackgroundWebView() {
         let config = WKWebViewConfiguration()
@@ -74,6 +77,125 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         wv.isOpaque = false
         wv.backgroundColor = .black
         self.webView = wv
+
+        let html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <style>
+          * { margin:0; padding:0; box-sizing:border-box; }
+          html, body { width:100%; height:100%; background:#000000; overflow:hidden; }
+          #player { width:100% !important; height:100% !important; }
+        </style>
+        <script src="https://www.youtube.com/iframe_api"></script>
+        </head>
+        <body>
+        <div id="player"></div>
+        <script>
+        var player = null;
+        var isReady = false;
+        var pendingId = null;
+
+        function onYouTubeIframeAPIReady() {
+          player = new YT.Player('player', {
+            height: '100%',
+            width: '100%',
+            playerVars: {
+              'autoplay': 1,
+              'controls': 0,
+              'disablekb': 1,
+              'fs': 0,
+              'modestbranding': 1,
+              'playsinline': 1,
+              'rel': 0
+            },
+            events: {
+              'onReady': function(e) {
+                isReady = true;
+                try {
+                  e.target.unMute();
+                  e.target.setVolume(100);
+                } catch(err) {}
+                window.webkit.messageHandlers.audioBridge.postMessage({ type: 'READY' });
+                if (pendingId) {
+                  playTrack(pendingId);
+                  pendingId = null;
+                }
+              },
+              'onStateChange': function(e) {
+                if (e.data === 1) { // Playing -> ensure unmuted
+                  try {
+                    e.target.unMute();
+                    e.target.setVolume(100);
+                  } catch(err) {}
+                }
+                window.webkit.messageHandlers.audioBridge.postMessage({ type: 'STATE', state: e.data });
+              },
+              'onError': function(e) {
+                window.webkit.messageHandlers.audioBridge.postMessage({ type: 'ERROR', code: e.data });
+              }
+            }
+          });
+
+          setInterval(function() {
+            if (isReady && player && typeof player.getCurrentTime === 'function') {
+              try {
+                var cur = player.getCurrentTime() || 0;
+                var dur = player.getDuration() || 0;
+                if (dur > 0) {
+                  window.webkit.messageHandlers.audioBridge.postMessage({
+                    type: 'PROGRESS',
+                    current: cur,
+                    duration: dur
+                  });
+                }
+              } catch(e) {}
+            }
+          }, 350);
+        }
+
+        function playTrack(vid) {
+          if (!isReady || !player || typeof player.loadVideoById !== 'function') {
+            pendingId = vid;
+            return;
+          }
+          try {
+            player.unMute();
+            player.setVolume(100);
+            player.loadVideoById(vid);
+            player.playVideo();
+          } catch(err) {
+            pendingId = vid;
+          }
+        }
+
+        function resumeTrack() {
+          if (player && typeof player.playVideo === 'function') {
+            try {
+              player.unMute();
+              player.setVolume(100);
+              player.playVideo();
+            } catch(e) {}
+          }
+        }
+
+        function pauseTrack() {
+          if (player && typeof player.pauseVideo === 'function') {
+            try { player.pauseVideo(); } catch(e) {}
+          }
+        }
+
+        function seekTrack(sec) {
+          if (player && typeof player.seekTo === 'function') {
+            try { player.seekTo(sec, true); } catch(e) {}
+          }
+        }
+        </script>
+        </body>
+        </html>
+        """
+        wv.loadHTMLString(html, baseURL: URL(string: "https://www.youtube-nocookie.com"))
     }
 
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -84,13 +206,15 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
             guard let self = self else { return }
             switch type {
             case "READY":
-                self.configureAudioSession()
-                self.play()
+                self.isWebViewReady = true
+                if let queued = self.queuedVideoId {
+                    self.webView?.evaluateJavaScript("playTrack('\(queued)');")
+                    self.queuedVideoId = nil
+                }
             case "STATE":
                 if let state = dict["state"] as? Int {
                     if state == 1 { // Playing
                         self.isPlaying = true
-                        self.configureAudioSession()
                     } else if state == 2 { // Paused
                         self.isPlaying = false
                     } else if state == 0 { // Ended
@@ -154,67 +278,14 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         isPlaying = true
         updateNowPlayingInfo(song: song)
 
-        // Stop AVPlayer if running
-        avPlayer?.pause()
-        isUsingAVPlayer = false
-
-        // Load and play video in WebKit audio engine
-        loadYouTubeVideo(videoId: song.id)
-    }
-
-    private func loadYouTubeVideo(videoId: String) {
-        let embedHTML = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <style>
-          * { margin:0; padding:0; box-sizing:border-box; }
-          html, body { width:100%; height:100%; background:#000; overflow:hidden; }
-          iframe { width:100%; height:100%; border:0; }
-        </style>
-        </head>
-        <body>
-        <iframe id="yt" src="https://www.youtube.com/embed/\(videoId)?autoplay=1&playsinline=1&controls=0&enablejsapi=1&origin=https://www.youtube.com" allow="autoplay; encrypted-media"></iframe>
-        <script>
-        window.addEventListener('message', function(event) {
-          try {
-            var data = JSON.parse(event.data);
-            if (data.event === 'onReady') {
-              window.webkit.messageHandlers.audioBridge.postMessage({ type: 'READY' });
-            } else if (data.event === 'infoDelivery' && data.info) {
-              if (typeof data.info.playerState !== 'undefined') {
-                window.webkit.messageHandlers.audioBridge.postMessage({ type: 'STATE', state: data.info.playerState });
-              }
-              if (typeof data.info.currentTime !== 'undefined') {
-                window.webkit.messageHandlers.audioBridge.postMessage({
-                  type: 'PROGRESS',
-                  current: data.info.currentTime,
-                  duration: data.info.duration || 0
-                });
-              }
+        // Queue and play through YouTube Audio Engine with unMute guarantee
+        queuedVideoId = song.id
+        let js = "playTrack('\(song.id)');"
+        webView?.evaluateJavaScript(js) { [weak self] (_, error) in
+            if error != nil {
+                self?.queuedVideoId = song.id
             }
-          } catch(e) {}
-        });
-
-        var frame = document.getElementById('yt');
-        function initPlayer() {
-          try {
-            frame.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*');
-            frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
-            frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
-            frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
-          } catch(e) {}
         }
-        frame.onload = function() {
-          setTimeout(initPlayer, 250);
-          setTimeout(initPlayer, 800);
-        };
-        </script>
-        </body>
-        </html>
-        """
-        webView?.loadHTMLString(embedHTML, baseURL: URL(string: "https://www.youtube.com"))
     }
 
     public func togglePlayPause() {
@@ -227,21 +298,18 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
 
     public func play() {
         configureAudioSession()
-        let js = "document.getElementById('yt').contentWindow.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[]}), '*');"
-        webView?.evaluateJavaScript(js)
+        webView?.evaluateJavaScript("resumeTrack();")
         isPlaying = true
     }
 
     public func pause() {
-        let js = "document.getElementById('yt').contentWindow.postMessage(JSON.stringify({event:'command',func:'pauseVideo',args:[]}), '*');"
-        webView?.evaluateJavaScript(js)
+        webView?.evaluateJavaScript("pauseTrack();")
         isPlaying = false
     }
 
     public func seek(to seconds: Double) {
         currentTime = seconds
-        let js = "document.getElementById('yt').contentWindow.postMessage(JSON.stringify({event:'command',func:'seekTo',args:[\(seconds), true]}), '*');"
-        webView?.evaluateJavaScript(js)
+        webView?.evaluateJavaScript("seekTrack(\(seconds));")
         if let song = currentSong {
             updateNowPlayingInfo(song: song)
         }
@@ -384,14 +452,13 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
 }
 
 // -------------------------------------------------------------
-// WebKit Background View Representable (100% Opacity to Prevent Throttling)
+// WebKit Background View Representable
 // -------------------------------------------------------------
 public struct YouTubeBackgroundPlayerView: UIViewRepresentable {
     public init() {}
 
     public func makeUIView(context: Context) -> UIView {
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 240))
-        container.isUserInteractionEnabled = false
 
         if let wv = AudioPlayerService.shared.webView {
             wv.frame = CGRect(x: 0, y: 0, width: 320, height: 240)
