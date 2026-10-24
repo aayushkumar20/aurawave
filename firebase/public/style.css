@@ -110,6 +110,25 @@ body {
   color: var(--success-color);
 }
 
+.sync-badge {
+  background: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.3);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sync-badge:hover {
+  transform: scale(1.04);
+  background: rgba(236, 72, 153, 0.25);
+}
+
+.sync-badge.off {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
 /* Main Content Area */
 .main-content {
   flex: 1;
