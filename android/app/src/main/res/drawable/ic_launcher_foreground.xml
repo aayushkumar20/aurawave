@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Stylized modern headphone / soundwave symbol in indigo and cyan gradient style -->
+    <path
+        android:fillColor="#6366F1"
+        android:pathData="M54,28 A26,26 0 0,0 28,54 L28,74 A6,6 0 0,0 34,80 L38,80 A6,6 0 0,0 44,74 L44,60 A6,6 0 0,0 38,54 L34,54 A20,20 0 0,1 74,54 L70,54 A6,6 0 0,0 64,60 L64,74 A6,6 0 0,0 70,80 L74,80 A6,6 0 0,0 80,74 L80,54 A26,26 0 0,0 54,28 Z" />
+    <path
+        android:fillColor="#06B6D4"
+        android:pathData="M51,46 L51,62 A7,7 0 1,1 46,56.5 L46,46 Z" />
+</vector>

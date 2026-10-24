@@ -1,0 +1,21 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomId": {
+        ".read": true,
+        ".write": true,
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['id', 'senderId', 'senderName', 'text', 'timestamp'])"
+          }
+        },
+        "members": {
+          "$memberId": {
+            ".read": true,
+            ".write": true
+          }
+        }
+      }
+    }
+  }
+}

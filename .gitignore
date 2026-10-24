@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+android/app/build/
+android/.gradle/
+android/build/
+local.properties
+
+# Swift / Xcode
+ios/.build/
+.build/
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+DerivedData/
+
+# OS
+.DS_Store
+Thumbs.db
