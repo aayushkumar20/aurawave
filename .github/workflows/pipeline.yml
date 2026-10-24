@@ -34,9 +34,6 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: 📱 Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: 🔑 Grant Execute Permissions for gradlew
         run: chmod +x android/gradlew
 
@@ -44,6 +41,8 @@ jobs:
         run: |
           cd android
           ./gradlew assembleDebug --stacktrace --no-daemon
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
 
       - name: 📦 Locate APK
         id: find_apk
