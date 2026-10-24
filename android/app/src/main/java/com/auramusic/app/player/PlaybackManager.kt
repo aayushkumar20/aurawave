@@ -268,7 +268,7 @@ object PlaybackManager {
     private fun loadAndPlay(song: Song) {
         scope.launch {
             val resolvedUrl = YouTubeMusicEngine.resolveStreamUrl(song)
-            val mediaItem = MediaItem.fromUri(resolvedUrl)
+            val mediaItem = MediaItem.fromUri(android.net.Uri.parse(resolvedUrl))
             exoPlayer?.let { player ->
                 player.setMediaItem(mediaItem)
                 player.prepare()

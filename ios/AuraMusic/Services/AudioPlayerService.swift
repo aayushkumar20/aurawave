@@ -1,13 +1,13 @@
 import Foundation
-import AVFoundation
+import WebKit
 import MediaPlayer
 import Combine
 
-public final class AudioPlayerService: ObservableObject {
+public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
     public static let shared = AudioPlayerService()
 
-    private var player: AVPlayer?
-    private var timeObserverToken: Any?
+    private var webView: WKWebView?
+    private var isWebViewReady = false
 
     @Published public var currentSong: Song?
     @Published public var isPlaying: Bool = false
@@ -22,10 +22,118 @@ public final class AudioPlayerService: ObservableObject {
     @Published public var trendingSongs: [Song] = []
     @Published public var isLoadingTrending: Bool = true
 
-    private init() {
+    private override init() {
+        super.init()
+        setupBackgroundPlayer()
         configureAudioSession()
         setupRemoteCommandCenter()
         loadLiveTrending()
+    }
+
+    private func setupBackgroundPlayer() {
+        let config = WKWebViewConfiguration()
+        #if os(iOS)
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+        #endif
+        let contentController = WKUserContentController()
+        contentController.add(self, name: "audioBridge")
+        config.userContentController = contentController
+
+        let wv = WKWebView(frame: .zero, configuration: config)
+        wv.navigationDelegate = self
+        self.webView = wv
+
+        let html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="https://www.youtube.com/iframe_api"></script>
+        </head>
+        <body style="margin:0; background:transparent;">
+        <div id="player"></div>
+        <script>
+        var player;
+        function onYouTubeIframeAPIReady() {
+          player = new YT.Player('player', {
+            height: '100%',
+            width: '100%',
+            playerVars: {
+              autoplay: 1,
+              controls: 0,
+              disablekb: 1,
+              fs: 0,
+              modestbranding: 1,
+              playsinline: 1,
+              rel: 0
+            },
+            events: {
+              'onReady': function() {
+                window.webkit.messageHandlers.audioBridge.postMessage({ type: 'READY' });
+              },
+              'onStateChange': function(e) {
+                window.webkit.messageHandlers.audioBridge.postMessage({ type: 'STATE', state: e.data });
+              }
+            }
+          });
+          setInterval(function() {
+            if (player && player.getCurrentTime) {
+              window.webkit.messageHandlers.audioBridge.postMessage({
+                type: 'PROGRESS',
+                current: player.getCurrentTime(),
+                duration: player.getDuration()
+              });
+            }
+          }, 500);
+        }
+        </script>
+        </body>
+        </html>
+        """
+        wv.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+    }
+
+    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let dict = message.body as? [String: Any],
+              let type = dict["type"] as? String else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            switch type {
+            case "READY":
+                self.isWebViewReady = true
+                if let song = self.currentSong {
+                    self.playSong(song)
+                }
+            case "STATE":
+                if let state = dict["state"] as? Int {
+                    if state == 1 { // Playing
+                        self.isPlaying = true
+                    } else if state == 2 { // Paused
+                        self.isPlaying = false
+                    } else if state == 0 { // Ended
+                        if self.repeatMode == .one {
+                            self.seek(to: 0)
+                            self.webView?.evaluateJavaScript("if (player) player.playVideo();")
+                        } else {
+                            self.skipNext()
+                        }
+                    }
+                }
+            case "PROGRESS":
+                if let cur = dict["current"] as? Double,
+                   let dur = dict["duration"] as? Double {
+                    self.currentTime = cur
+                    if dur > 0 { self.duration = dur }
+                    if let song = self.currentSong {
+                        self.updateNowPlayingInfo(song: song)
+                    }
+                }
+            default:
+                break
+            }
+        }
     }
 
     public func loadLiveTrending() {
@@ -74,8 +182,19 @@ public final class AudioPlayerService: ObservableObject {
             self?.skipPrevious()
             return .success
         }
+
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            if let posEvent = event as? MPChangePlaybackPositionCommandEvent {
+                self?.seek(to: posEvent.positionTime)
+                return .success
+            }
+            return .commandFailed
+        }
     }
 
+    /**
+     * Plays 100% COMPLETE Full YouTube Song
+     */
     public func playSong(_ song: Song) {
         if let idx = queue.firstIndex(where: { $0.id == song.id }) {
             currentIndex = idx
@@ -85,12 +204,13 @@ public final class AudioPlayerService: ObservableObject {
         }
 
         currentSong = song
-        loadAndPlay(song)
+        let videoId = song.id
+        webView?.evaluateJavaScript("if (player && player.loadVideoById) { player.loadVideoById('\(videoId)'); player.playVideo(); }")
+        isPlaying = true
+        duration = song.durationSeconds
+        updateNowPlayingInfo(song: song)
     }
 
-    /**
-     * User requirement: Play Next (inserts immediately after active track in queue)
-     */
     public func playNext(_ song: Song) {
         if let idx = queue.firstIndex(where: { $0.id == song.id }) {
             queue.remove(at: idx)
@@ -99,9 +219,6 @@ public final class AudioPlayerService: ObservableObject {
         queue.insert(song, at: insertIndex)
     }
 
-    /**
-     * User requirement: Play Last (appends to end of current queue)
-     */
     public func playLast(_ song: Song) {
         if let idx = queue.firstIndex(where: { $0.id == song.id }) {
             queue.remove(at: idx)
@@ -111,22 +228,20 @@ public final class AudioPlayerService: ObservableObject {
 
     public func togglePlayPause() {
         if isPlaying {
-            player?.pause()
+            webView?.evaluateJavaScript("if (player && player.pauseVideo) { player.pauseVideo(); }")
             isPlaying = false
         } else {
-            if player == nil, let song = currentSong {
-                playSong(song)
-            } else {
-                player?.play()
-                isPlaying = true
-            }
+            webView?.evaluateJavaScript("if (player && player.playVideo) { player.playVideo(); }")
+            isPlaying = true
         }
     }
 
+    /**
+     * Exact seeking across full song (e.g. at 1 min)
+     */
     public func seek(to seconds: Double) {
-        let cmTime = CMTime(seconds: seconds, preferredTimescale: 600)
-        player?.seek(to: cmTime)
         currentTime = seconds
+        webView?.evaluateJavaScript("if (player && player.seekTo) { player.seekTo(\(seconds), true); }")
     }
 
     public func skipNext() {
@@ -134,8 +249,7 @@ public final class AudioPlayerService: ObservableObject {
         let nextIdx = isShuffleEnabled ? Int.random(in: 0..<queue.count) : (currentIndex + 1) % queue.count
         currentIndex = nextIdx
         let nextSong = queue[nextIdx]
-        currentSong = nextSong
-        loadAndPlay(nextSong)
+        playSong(nextSong)
     }
 
     public func skipPrevious() {
@@ -143,8 +257,7 @@ public final class AudioPlayerService: ObservableObject {
         let prevIdx = currentIndex - 1 < 0 ? queue.count - 1 : currentIndex - 1
         currentIndex = prevIdx
         let prevSong = queue[prevIdx]
-        currentSong = prevSong
-        loadAndPlay(prevSong)
+        playSong(prevSong)
     }
 
     public func toggleShuffle() {
@@ -179,57 +292,12 @@ public final class AudioPlayerService: ObservableObject {
         playlists.append(pl)
     }
 
-    private func loadAndPlay(_ song: Song) {
-        Task { @MainActor in
-            let resolvedUrl = await YouTubeMusicEngine.shared.resolveStreamUrl(song: song)
-            let item = AVPlayerItem(url: resolvedUrl)
-
-            if let token = self.timeObserverToken {
-                self.player?.removeTimeObserver(token)
-                self.timeObserverToken = nil
-            }
-
-            self.player = AVPlayer(playerItem: item)
-            self.player?.play()
-            self.isPlaying = true
-            self.duration = song.durationSeconds
-
-            // Track progress
-            let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
-            self.timeObserverToken = self.player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-                guard let self = self else { return }
-                self.currentTime = time.seconds
-                if let dur = self.player?.currentItem?.duration.seconds, !dur.isNaN {
-                    self.duration = dur
-                }
-            }
-
-            // Track finished notification
-            NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: nil)
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: item,
-                queue: .main
-            ) { [weak self] _ in
-                guard let self = self else { return }
-                if self.repeatMode == .one {
-                    self.seek(to: 0)
-                    self.player?.play()
-                } else {
-                    self.skipNext()
-                }
-            }
-
-            self.updateNowPlayingInfo(song: song)
-        }
-    }
-
     private func updateNowPlayingInfo(song: Song) {
         var nowPlayingInfo = [String: Any]()
         nowPlayingInfo[MPMediaItemPropertyTitle] = song.title
         nowPlayingInfo[MPMediaItemPropertyArtist] = song.artist
         nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = song.album
-        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = song.durationSeconds
+        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
         nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
     }

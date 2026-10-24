@@ -9,7 +9,7 @@ echo "🎵 Starting Aura Music Web Player on http://localhost:$PORT ..."
 echo "👉 Open http://localhost:$PORT in your browser to test live streaming and chat!"
 
 if command -v python3 &>/dev/null; then
-    python3 -m http.server "$PORT" --directory "$DIR"
+    python3 "$DIR/../../server.py" "$PORT"
 elif command -v npx &>/dev/null; then
     npx -y serve -l "$PORT" "$DIR"
 else

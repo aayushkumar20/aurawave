@@ -13,29 +13,13 @@ try {
   console.log("Firebase initialized in local-first sync mode", e);
 }
 
-// Resilient Invidious Instances
-const INVIDIOUS_ENDPOINTS = [
+// Live Public Streaming Endpoints (Piped + Invidious with CORS)
+const LIVE_STREAM_ENDPOINTS = [
+  "https://pipedapi.kavin.rocks",
+  "https://api.piped.privacy.com.de",
   "https://yt.chocolatemoo53.com"
 ];
 
-// Curated Live Full Songs Feed (Guaranteed Full YouTube Songs with Zero Ads)
-const FEATURED_TRACKS = [
-  { id: "4NRXx6U8ABQ", title: "Blinding Lights", artist: "The Weeknd", album: "After Hours", durationText: "3:20", thumbnailUrl: "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg" },
-  { id: "2Vv-BfVoq4g", title: "Perfect", artist: "Ed Sheeran", album: "÷ (Divide)", durationText: "4:23", thumbnailUrl: "https://i.ytimg.com/vi/2Vv-BfVoq4g/hqdefault.jpg" },
-  { id: "60ItHLz5WEA", title: "Faded", artist: "Alan Walker", album: "Different World", durationText: "3:32", thumbnailUrl: "https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg" },
-  { id: "YykjpeuMNEk", title: "Hymn For The Weekend", artist: "Coldplay", album: "A Head Full of Dreams", durationText: "4:18", thumbnailUrl: "https://i.ytimg.com/vi/YykjpeuMNEk/hqdefault.jpg" },
-  { id: "k4V3Mo61fJM", title: "Fix You", artist: "Coldplay", album: "X&Y", durationText: "4:55", thumbnailUrl: "https://i.ytimg.com/vi/k4V3Mo61fJM/hqdefault.jpg" },
-  { id: "JGwWNGJdvx8", title: "Shape of You", artist: "Ed Sheeran", album: "÷ (Divide)", durationText: "3:53", thumbnailUrl: "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg" },
-  { id: "09R8_2nJtjg", title: "Sugar", artist: "Maroon 5", album: "V", durationText: "3:55", thumbnailUrl: "https://i.ytimg.com/vi/09R8_2nJtjg/hqdefault.jpg" },
-  { id: "RgKAFK5djSk", title: "See You Again", artist: "Wiz Khalifa ft. Charlie Puth", album: "Furious 7", durationText: "3:49", thumbnailUrl: "https://i.ytimg.com/vi/RgKAFK5djSk/hqdefault.jpg" },
-  { id: "hT_nvWreIhg", title: "Counting Stars", artist: "OneRepublic", album: "Native", durationText: "4:17", thumbnailUrl: "https://i.ytimg.com/vi/hT_nvWreIhg/hqdefault.jpg" },
-  { id: "OPf0YbXqDm0", title: "Uptown Funk", artist: "Mark Ronson ft. Bruno Mars", album: "Uptown Special", durationText: "4:30", thumbnailUrl: "https://i.ytimg.com/vi/OPf0YbXqDm0/hqdefault.jpg" },
-  { id: "3AtDnEC4zak", title: "We Don't Talk Anymore", artist: "Charlie Puth ft. Selena Gomez", album: "Nine Track Mind", durationText: "3:37", thumbnailUrl: "https://i.ytimg.com/vi/3AtDnEC4zak/hqdefault.jpg" },
-  { id: "DkeiKbqa02g", title: "Summer", artist: "Calvin Harris", album: "Motion", durationText: "3:42", thumbnailUrl: "https://i.ytimg.com/vi/DkeiKbqa02g/hqdefault.jpg" },
-  { id: "RBumgq5yVrA", title: "Let Her Go", artist: "Passenger", album: "All the Little Lights", durationText: "4:12", thumbnailUrl: "https://i.ytimg.com/vi/RBumgq5yVrA/hqdefault.jpg" },
-  { id: "SmM0653kqRs", title: "Adventure Of A Lifetime", artist: "Coldplay", album: "A Head Full of Dreams", durationText: "4:24", thumbnailUrl: "https://i.ytimg.com/vi/SmM0653kqRs/hqdefault.jpg" },
-  { id: "uelHwf8o7_U", title: "Love The Way You Lie", artist: "Eminem ft. Rihanna", album: "Recovery", durationText: "4:26", thumbnailUrl: "https://i.ytimg.com/vi/uelHwf8o7_U/hqdefault.jpg" }
-];
 
 // App State
 const state = {
@@ -163,47 +147,112 @@ function fetchWithTimeout(url, opts = {}, timeoutMs = 2800) {
     .finally(() => clearTimeout(id));
 }
 
-// Live Music Fetcher (FULL SONGS from YouTube)
+// Live Music Fetcher (100% REAL-TIME LIVE DATA - ZERO HARDCODING)
 async function fetchTrendingTracks() {
-  for (const base of INVIDIOUS_ENDPOINTS) {
+  // 1. Try local server YouTube InnerTube proxy
+  try {
+    const res = await fetchWithTimeout('/api/trending', {}, 4000);
+    if (res.ok) {
+      const songs = await res.json();
+      if (Array.isArray(songs) && songs.length > 0) return songs;
+    }
+  } catch (_) {}
+
+  // 2. Direct CORS-friendly public streaming instances
+  for (const base of LIVE_STREAM_ENDPOINTS) {
     try {
-      const res = await fetchWithTimeout(`${base}/api/v1/trending?type=music`, {}, 2500);
-      if (res.ok) {
-        const items = await res.json();
-        if (Array.isArray(items) && items.length > 0) {
-          const songs = parseInvidiousItems(items);
-          if (songs.length > 0) return songs;
+      if (base.includes('piped')) {
+        const res = await fetchWithTimeout(`${base}/trending?region=US`, {}, 3000);
+        if (res.ok) {
+          const items = await res.json();
+          if (Array.isArray(items) && items.length > 0) {
+            const songs = parsePipedItems(items);
+            if (songs.length > 0) return songs;
+          }
+        }
+      } else {
+        const res = await fetchWithTimeout(`${base}/api/v1/trending?type=music`, {}, 3000);
+        if (res.ok) {
+          const items = await res.json();
+          if (Array.isArray(items) && items.length > 0) {
+            const songs = parseInvidiousItems(items);
+            if (songs.length > 0) return songs;
+          }
         }
       }
     } catch (_) {}
   }
-  return FEATURED_TRACKS;
+
+  // 3. Fallback search for latest top charts in real time
+  return await searchYouTubeMusic("Billboard Hot 100 Music Hits");
 }
 
 async function searchYouTubeMusic(query) {
-  if (!query) return FEATURED_TRACKS;
+  const q = (query || "Top Music Hits 2026").trim();
 
-  for (const base of INVIDIOUS_ENDPOINTS) {
+  // 1. Local YouTube InnerTube proxy
+  try {
+    const res = await fetchWithTimeout(`/api/search?q=${encodeURIComponent(q)}`, {}, 5000);
+    if (res.ok) {
+      const songs = await res.json();
+      if (Array.isArray(songs) && songs.length > 0) return songs;
+    }
+  } catch (_) {}
+
+  // 2. Public Live Streaming APIs
+  for (const base of LIVE_STREAM_ENDPOINTS) {
     try {
-      const res = await fetchWithTimeout(`${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`, {}, 3000);
-      if (res.ok) {
-        const items = await res.json();
-        if (Array.isArray(items)) {
-          const songs = parseInvidiousItems(items);
-          if (songs.length > 0) return songs;
+      if (base.includes('piped')) {
+        const res = await fetchWithTimeout(`${base}/search?q=${encodeURIComponent(q)}&filter=music_songs`, {}, 3500);
+        if (res.ok) {
+          const data = await res.json();
+          const items = data.items || data;
+          if (Array.isArray(items)) {
+            const songs = parsePipedItems(items);
+            if (songs.length > 0) return songs;
+          }
+        }
+      } else {
+        const res = await fetchWithTimeout(`${base}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, {}, 3500);
+        if (res.ok) {
+          const items = await res.json();
+          if (Array.isArray(items)) {
+            const songs = parseInvidiousItems(items);
+            if (songs.length > 0) return songs;
+          }
         }
       }
     } catch (_) {}
   }
 
-  // Filter curated featured tracks by query as fallback
-  const qLower = query.toLowerCase();
-  const matched = FEATURED_TRACKS.filter(s => s.title.toLowerCase().includes(qLower) || s.artist.toLowerCase().includes(qLower));
-  return matched.length > 0 ? matched : FEATURED_TRACKS;
+  return [];
+}
+
+function parsePipedItems(items) {
+  return items.filter(i => (i.url || i.id)).slice(0, 30).map(item => {
+    let videoId = item.id;
+    if (!videoId && item.url) {
+      const match = item.url.match(/v=([a-zA-Z0-9_-]{11})/);
+      videoId = match ? match[1] : item.url.replace('/watch?v=', '');
+    }
+    const durationSec = item.duration || 210;
+    const mins = Math.floor(durationSec / 60);
+    const secs = String(durationSec % 60).padStart(2, '0');
+    const thumb = item.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    return {
+      id: videoId,
+      title: item.title || 'Unknown Title',
+      artist: item.uploaderName || 'YouTube Artist',
+      album: 'YouTube Music',
+      durationText: `${mins}:${secs}`,
+      thumbnailUrl: thumb,
+      durationSec: durationSec
+    };
+  }).filter(s => s.id && s.id.length === 11);
 }
 
 function parseInvidiousItems(items) {
-  return items.filter(i => (i.type === 'video' || i.videoId)).slice(0, 25).map(item => {
+  return items.filter(i => (i.type === 'video' || i.videoId)).slice(0, 30).map(item => {
     const videoId = item.videoId || '';
     const durationSec = item.lengthSeconds || 210;
     const mins = Math.floor(durationSec / 60);
@@ -223,6 +272,16 @@ function parseInvidiousItems(items) {
 
 async function getSearchSuggestions(query) {
   if (!query) return [];
+  // 1. Try local server suggest endpoint
+  try {
+    const res = await fetchWithTimeout(`/api/suggest?q=${encodeURIComponent(query)}`, {}, 1500);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+  } catch (_) {}
+
+  // 2. Direct Google Suggest
   try {
     const res = await fetchWithTimeout(`https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=${encodeURIComponent(query)}`, {}, 1500);
     if (res.ok) {
