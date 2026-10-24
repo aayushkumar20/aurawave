@@ -1,0 +1,42 @@
+name: AuraMusic
+options:
+  bundleIdPrefix: com.auramusic
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  AuraMusic:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    scheme:
+      test: {}
+      gatherCoverageData: false
+    sources:
+      - path: AuraMusic
+    info:
+      path: AuraMusic/Info.plist
+      properties:
+        CFBundleDisplayName: Aura Music
+        UIBackgroundModes:
+          - audio
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.auramusic.app
+      INFOPLIST_FILE: AuraMusic/Info.plist
+      MARKETING_VERSION: "1.0.0"
+      CURRENT_PROJECT_VERSION: "1"
+      SWIFT_VERSION: "5.9"
+      ENABLE_PREVIEWS: YES
+      GENERATE_INFOPLIST_FILE: NO
+      TARGETED_DEVICE_FAMILY: "1,2"
+      CODE_SIGN_STYLE: Automatic
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      LD_RUNPATH_SEARCH_PATHS:
+        - $(inherited)
+        - "@executable_path/Frameworks"

@@ -74,17 +74,15 @@ jobs:
           swift --version
           xcodebuild -version
 
-      - name: 🔨 Build Swift Package
+      - name: 🔨 Build Xcode Project (AuraMusic.xcodeproj)
         run: |
-          cd ios
-          swift build -c release
+          xcodebuild -project ios/AuraMusic.xcodeproj -scheme AuraMusic -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 
-      - name: 🚀 Upload iOS Binary Artifact
+      - name: 🚀 Upload iOS Project Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AuraMusic-iOS-Binary
-          path: ios/.build/release/AuraMusic
-          if-no-files-found: ignore
+          name: AuraMusic-iOS-XcodeProject
+          path: ios/AuraMusic.xcodeproj
           retention-days: 30
 
   # -------------------------------------------------------------

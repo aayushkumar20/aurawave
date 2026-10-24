@@ -11,9 +11,13 @@ ios/.build/
 .build/
 *.xcodeproj/*
 !*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
 *.xcworkspace/*
 !*.xcworkspace/contents.xcworkspacedata
+!*.xcworkspace/xcshareddata/
 DerivedData/
+xcuserdata/
+*.xcuserdata
 
 # OS
 .DS_Store
