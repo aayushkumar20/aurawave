@@ -71,6 +71,11 @@ jobs:
 
       - name: 🛠️ Set up Swift & Xcode
         run: |
+          if [ -d "/Applications/Xcode_16.0.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.0.app
+          elif [ -d "/Applications/Xcode_16.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.app
+          fi
           swift --version
           xcodebuild -version
 
