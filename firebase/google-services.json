@@ -1,9 +1,9 @@
 {
   "project_info": {
     "project_number": "102938475612",
-    "firebase_url": "https://aura-music-app-default-rtdb.firebaseio.com",
-    "project_id": "aura-music-app",
-    "storage_bucket": "aura-music-app.appspot.com"
+    "firebase_url": "https://linuxvm-d10a3-default-rtdb.firebaseio.com",
+    "project_id": "linuxvm-d10a3",
+    "storage_bucket": "linuxvm-d10a3.appspot.com"
   },
   "client": [
     {

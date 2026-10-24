@@ -4,7 +4,7 @@ import Combine
 public final class ChatService: ObservableObject {
     public static let shared = ChatService()
 
-    public var firebaseDatabaseUrl = "https://aura-music-app-default-rtdb.firebaseio.com"
+    public var firebaseDatabaseUrl = "https://linuxvm-d10a3-default-rtdb.firebaseio.com"
 
     public let popularEmojis = ["❤️", "🔥", "🎧", "👏", "😂", "😮", "🚀", "✨", "🎵"]
 
@@ -42,13 +42,13 @@ public final class ChatService: ObservableObject {
         )
         self.messages = [welcome]
 
-        startFirebaseSync()
+        startLiveSync()
     }
 
     public func switchRoom(_ room: ChatRoom) {
         self.currentRoom = room
         self.messages = []
-        startFirebaseSync()
+        startLiveSync()
     }
 
     public func leaveRoom() {
@@ -64,7 +64,7 @@ public final class ChatService: ObservableObject {
         msg.reactions[emoji, default: 0] += 1
         messages[idx] = msg
 
-        syncToFirebase(message: msg)
+        broadcastMessage(msg)
     }
 
     public func sendMessage(text: String, sharedSong: Song? = nil) {
@@ -83,79 +83,73 @@ public final class ChatService: ObservableObject {
         )
 
         messages.append(newMsg)
-        syncToFirebase(message: newMsg)
+        broadcastMessage(newMsg)
     }
 
-    private func startFirebaseSync() {
+    private func startLiveSync() {
         syncTimer?.invalidate()
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            self?.fetchMessagesFromFirebase()
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+            self?.pollRoomUpdates()
         }
     }
 
-    private func fetchMessagesFromFirebase() {
+    private func broadcastMessage(_ message: ChatMessage) {
+        let roomId = currentRoom.id
+        guard let payloadData = try? JSONEncoder().encode(message) else { return }
+
+        // 1. Send to Firebase
+        if let fbUrl = URL(string: "\(firebaseDatabaseUrl)/rooms/\(roomId)/messages/\(message.id).json") {
+            var req = URLRequest(url: fbUrl)
+            req.httpMethod = "PUT"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = payloadData
+            URLSession.shared.dataTask(with: req).resume()
+        }
+
+        // 2. Send to instant realtime pubsub relay
+        if let relayUrl = URL(string: "https://ntfy.sh/aura_music_\(roomId)") {
+            var req = URLRequest(url: relayUrl)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = payloadData
+            URLSession.shared.dataTask(with: req).resume()
+        }
+    }
+
+    private func pollRoomUpdates() {
         guard let profile = currentProfile else { return }
-        guard let url = URL(string: "\(firebaseDatabaseUrl)/rooms/\(currentRoom.id)/messages.json") else { return }
+        guard let url = URL(string: "https://ntfy.sh/aura_music_\(currentRoom.id)/json?poll=1&since=1m") else { return }
 
         URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             guard let self = self, let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Any]] else { return }
+                  let stringData = String(data: data, encoding: .utf8) else { return }
 
-            var fetched: [ChatMessage] = []
-            for (key, dict) in json {
-                let id = dict["id"] as? String ?? key
-                let senderId = dict["senderId"] as? String ?? ""
-                let senderName = dict["senderName"] as? String ?? "User"
-                let text = dict["text"] as? String ?? ""
-                let timestampVal = dict["timestamp"] as? Double ?? Date().timeIntervalSince1970
-                let isMe = senderId == profile.userId
+            let lines = stringData.components(separatedBy: "\n")
+            var newMessages: [ChatMessage] = []
 
-                fetched.append(
-                    ChatMessage(
-                        id: id,
-                        senderId: senderId,
-                        senderName: senderName,
-                        text: text,
-                        timestamp: Date(timeIntervalSince1970: timestampVal),
-                        sharedSong: nil,
-                        reactions: [:],
-                        isFromMe: isMe
-                    )
-                )
+            for line in lines where !line.isEmpty {
+                guard let lineData = line.data(using: .utf8),
+                      let eventJson = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                      let msgString = eventJson["message"] as? String,
+                      let msgData = msgString.data(using: .utf8),
+                      let parsed = try? JSONDecoder().decode(ChatMessage.self, from: msgData) else { continue }
+
+                if parsed.senderId != profile.userId {
+                    var copy = parsed
+                    // copy is not from me
+                    newMessages.append(copy)
+                }
             }
 
-            if !fetched.isEmpty {
+            if !newMessages.isEmpty {
                 DispatchQueue.main.async {
                     var map = Dictionary(uniqueKeysWithValues: self.messages.map { ($0.id, $0) })
-                    for item in fetched {
-                        if map[item.id] == nil {
-                            map[item.id] = item
-                        }
+                    for m in newMessages {
+                        map[m.id] = m
                     }
                     self.messages = map.values.sorted(by: { $0.timestamp < $1.timestamp })
                 }
             }
         }.resume()
-    }
-
-    private func syncToFirebase(message: ChatMessage) {
-        guard let url = URL(string: "\(firebaseDatabaseUrl)/rooms/\(currentRoom.id)/messages/\(message.id).json") else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let payload: [String: Any] = [
-            "id": message.id,
-            "senderId": message.senderId,
-            "senderName": message.senderName,
-            "text": message.text,
-            "timestamp": message.timestamp.timeIntervalSince1970,
-            "reactions": message.reactions,
-            "isFromMe": message.isFromMe
-        ]
-
-        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-
-        URLSession.shared.dataTask(with: req).resume()
     }
 }

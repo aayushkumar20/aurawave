@@ -11,9 +11,9 @@
 	<key>BUNDLE_ID</key>
 	<string>com.auramusic.app</string>
 	<key>PROJECT_ID</key>
-	<string>aura-music-app</string>
+	<string>linuxvm-d10a3</string>
 	<key>STORAGE_BUCKET</key>
-	<string>aura-music-app.appspot.com</string>
+	<string>linuxvm-d10a3.appspot.com</string>
 	<key>IS_ADS_ENABLED</key>
 	<false/>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -27,6 +27,6 @@
 	<key>GOOGLE_APP_ID</key>
 	<string>1:102938475612:ios:1234567890abcdef</string>
 	<key>DATABASE_URL</key>
-	<string>https://aura-music-app-default-rtdb.firebaseio.com</string>
+	<string>https://linuxvm-d10a3-default-rtdb.firebaseio.com</string>
 </dict>
 </plist>

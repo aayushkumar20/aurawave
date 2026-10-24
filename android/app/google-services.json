@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "102938475612",
+    "firebase_url": "https://linuxvm-d10a3-default-rtdb.firebaseio.com",
+    "project_id": "linuxvm-d10a3",
+    "storage_bucket": "linuxvm-d10a3.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:102938475612:android:9876543210abcdef",
+        "android_client_info": {
+          "package_name": "com.auramusic.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD-AuraMusicLiveKeyPlaceholder"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

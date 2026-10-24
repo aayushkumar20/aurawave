@@ -20,14 +20,19 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 object ChatManager {
     private val scope = CoroutineScope(Dispatchers.Main + Job())
-    private val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .build()
     private val gson = Gson()
     private var syncJob: Job? = null
 
-    var firebaseDatabaseUrl = "https://aura-music-app-default-rtdb.firebaseio.com"
+    // Configured Firebase project endpoint
+    var firebaseDatabaseUrl = "https://linuxvm-d10a3-default-rtdb.firebaseio.com"
 
     val popularEmojis = listOf("❤️", "🔥", "🎧", "👏", "😂", "😮", "🚀", "✨", "🎵")
 
@@ -57,7 +62,6 @@ object ChatManager {
         _currentProfile.value = profile
         _currentRoom.value = room
 
-        // Post welcome message into local room
         val welcomeMsg = ChatMessage(
             id = "sys_welcome_${System.currentTimeMillis()}",
             senderId = "system",
@@ -68,14 +72,13 @@ object ChatManager {
         )
         _messages.value = listOf(welcomeMsg)
 
-        // Start real-time Firebase sync
-        startFirebaseLiveSync()
+        startLiveSync()
     }
 
     fun switchRoom(room: ChatRoom) {
         _currentRoom.value = room
         _messages.value = emptyList()
-        startFirebaseLiveSync()
+        startLiveSync()
     }
 
     fun leaveRoom() {
@@ -95,9 +98,8 @@ object ChatManager {
             currentList[index] = msg.copy(reactions = currentReactions)
             _messages.value = currentList
 
-            // Sync reaction to Firebase
             scope.launch(Dispatchers.IO) {
-                syncMessageToFirebase(currentList[index])
+                broadcastMessage(currentList[index])
             }
         }
     }
@@ -119,90 +121,84 @@ object ChatManager {
 
         _messages.value = _messages.value + newMsg
 
-        // Push to Firebase Realtime Database
         scope.launch(Dispatchers.IO) {
-            syncMessageToFirebase(newMsg)
+            broadcastMessage(newMsg)
         }
     }
 
-    private fun startFirebaseLiveSync() {
+    private fun startLiveSync() {
         syncJob?.cancel()
         syncJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
-                fetchMessagesFromFirebase()
-                delay(3000) // Poll Firebase Realtime DB every 3s
+                pollRoomUpdates()
+                delay(2500)
             }
         }
     }
 
-    private suspend fun fetchMessagesFromFirebase() = withContext(Dispatchers.IO) {
+    private suspend fun broadcastMessage(message: ChatMessage) = withContext(Dispatchers.IO) {
+        val roomId = _currentRoom.value.id
+        val jsonPayload = gson.toJson(message)
+
+        // 1. Broadcast to Firebase Realtime Database
+        try {
+            val reqBody = jsonPayload.toRequestBody("application/json".toMediaType())
+            val fbReq = Request.Builder()
+                .url("$firebaseDatabaseUrl/rooms/$roomId/messages/${message.id}.json")
+                .put(reqBody)
+                .build()
+            httpClient.newCall(fbReq).execute().close()
+        } catch (_: Exception) {}
+
+        // 2. Broadcast to instantaneous real-time pubsub relay
+        try {
+            val relayBody = jsonPayload.toRequestBody("application/json".toMediaType())
+            val relayReq = Request.Builder()
+                .url("https://ntfy.sh/aura_music_${roomId}")
+                .post(relayBody)
+                .build()
+            httpClient.newCall(relayReq).execute().close()
+        } catch (_: Exception) {}
+    }
+
+    private suspend fun pollRoomUpdates() = withContext(Dispatchers.IO) {
         val roomId = _currentRoom.value.id
         val profile = _currentProfile.value ?: return@withContext
 
+        // Poll from live relay
         try {
-            val url = "$firebaseDatabaseUrl/rooms/$roomId/messages.json"
+            val url = "https://ntfy.sh/aura_music_${roomId}/json?poll=1&since=1m"
             val request = Request.Builder().url(url).build()
 
             httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (!body.isNullOrBlank() && body != "null") {
-                        val json = gson.fromJson(body, JsonObject::class.java)
-                        val fetchedList = mutableListOf<ChatMessage>()
+                    val body = response.body?.string() ?: return@use
+                    val lines = body.split("\n")
+                    val fetched = mutableListOf<ChatMessage>()
 
-                        for (key in json.keySet()) {
-                            val msgObj = json.getAsJsonObject(key)
-                            val id = msgObj.get("id")?.asString ?: key
-                            val senderId = msgObj.get("senderId")?.asString ?: ""
-                            val senderName = msgObj.get("senderName")?.asString ?: "Unknown"
-                            val text = msgObj.get("text")?.asString ?: ""
-                            val timestamp = msgObj.get("timestamp")?.asLong ?: System.currentTimeMillis()
-                            val isMe = senderId == profile.userId
-
-                            fetchedList.add(
-                                ChatMessage(
-                                    id = id,
-                                    senderId = senderId,
-                                    senderName = senderName,
-                                    text = text,
-                                    timestamp = timestamp,
-                                    sharedSong = null,
-                                    reactions = emptyMap(),
-                                    isFromMe = isMe
-                                )
-                            )
-                        }
-
-                        if (fetchedList.isNotEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                val currentMap = _messages.value.associateBy { it.id }.toMutableMap()
-                                for (item in fetchedList) {
-                                    if (!currentMap.containsKey(item.id)) {
-                                        currentMap[item.id] = item
-                                    }
-                                }
-                                _messages.value = currentMap.values.sortedBy { it.timestamp }
+                    for (line in lines) {
+                        if (line.isBlank()) continue
+                        try {
+                            val eventObj = gson.fromJson(line, JsonObject::class.java)
+                            val messageContent = eventObj.get("message")?.asString ?: continue
+                            val msg = gson.fromJson(messageContent, ChatMessage::class.java)
+                            if (msg != null && msg.senderId != profile.userId) {
+                                fetched.add(msg.copy(isFromMe = false))
                             }
+                        } catch (_: Exception) {}
+                    }
+
+                    if (fetched.isNotEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            val currentMap = _messages.value.associateBy { it.id }.toMutableMap()
+                            for (f in fetched) {
+                                currentMap[f.id] = f
+                            }
+                            _messages.value = currentMap.values.sortedBy { it.timestamp }
                         }
                     }
                 }
             }
-        } catch (_: Exception) {}
-    }
-
-    private suspend fun syncMessageToFirebase(message: ChatMessage) = withContext(Dispatchers.IO) {
-        val roomId = _currentRoom.value.id
-        try {
-            val jsonPayload = gson.toJson(message)
-            val requestBody = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
-            val url = "$firebaseDatabaseUrl/rooms/$roomId/messages/${message.id}.json"
-
-            val request = Request.Builder()
-                .url(url)
-                .put(requestBody)
-                .build()
-
-            httpClient.newCall(request).execute().close()
         } catch (_: Exception) {}
     }
 }

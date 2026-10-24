@@ -1,8 +1,6 @@
-// Aura Music - Real-Time YouTube Music & Firebase Chat Engine
-
 // Firebase Configuration (Uses Realtime Database)
 const firebaseConfig = {
-  databaseURL: "https://aura-music-app-default-rtdb.firebaseio.com"
+  databaseURL: "https://linuxvm-d10a3-default-rtdb.firebaseio.com"
 };
 
 let db = null;
