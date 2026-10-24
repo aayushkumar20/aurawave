@@ -68,20 +68,31 @@ Because Apple restricts direct `.ipa` installation without code-signing, you can
 
 ---
 
-## 🔥 Google Firebase Database Setup
+### 3. Web Player (Instant Browser Experience)
+The Firebase web player is located in `firebase/public/` with full live playback, autocomplete search, and real-time room chat.
+To run locally in 1 click:
+```bash
+./start-web-player.sh
+```
+Or with npx:
+```bash
+npx serve firebase/public
+```
 
-Aura Music connects seamlessly to Google Firebase Realtime Database for live room chat and emoji reactions.
+---
 
-1. Create a project at [Firebase Console](https://console.firebase.google.com/).
-2. Enable **Realtime Database** under *Build > Realtime Database*.
-3. Deploy the included security rules:
-   ```bash
-   cd firebase
-   firebase deploy --only database
-   ```
-4. Update the database URL in:
-   - Android: `ChatManager.firebaseDatabaseUrl`
-   - iOS: `ChatService.shared.firebaseDatabaseUrl`
+## 🔥 Google Firebase Integration
+
+Aura Music connects seamlessly to Firebase Realtime Database for real-time room chat and emoji sync:
+- Frictionless room entry with **Name** and **DOB** (no password or Google sign-in required).
+- Works with standard Firebase Realtime Database endpoints and local emulators.
+- Out of the box, it includes real-time synchronization so that messages, reactions, and song cards immediately sync between Android, iOS, and Web.
+
+To deploy to your Firebase project:
+```bash
+cd firebase
+firebase deploy
+```
 
 ---
 
@@ -104,12 +115,17 @@ Aura Music connects seamlessly to Google Firebase Realtime Database for live roo
 │       ├── Info.plist
 │       ├── Services/ (YouTubeMusicEngine.swift, AudioPlayerService.swift, ChatService.swift)
 │       └── Views/ (HomeView, SearchView, LibraryView, ChatView, NowPlayingView)
-├── firebase/              # Firebase Database Rules & Configuration
+├── firebase/              # Firebase Hosting, Database & Rules
 │   ├── database.rules.json
+│   ├── firestore.rules
+│   ├── firebase.json
+│   ├── .firebaserc
 │   ├── google-services.json
-│   └── GoogleService-Info.plist
-└── build-artifacts/
-    └── AuraMusic-Android.apk  # Ready-to-transfer Android APK
+│   ├── GoogleService-Info.plist
+│   └── public/            # Complete Web Player (HTML, CSS, JS)
+├── build-artifacts/
+│   └── AuraMusic-Android.apk  # Ready-to-transfer Android APK (19 MB)
+└── start-web-player.sh    # Instant 1-click web player launcher
 ```
 
 ---
