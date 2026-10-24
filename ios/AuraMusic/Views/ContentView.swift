@@ -10,7 +10,16 @@ public struct ContentView: View {
 
     public var body: some View {
         ZStack(alignment: .bottom) {
-            // Main Active View Container
+            // 1. Active WebKit Player (Kept at 100% opacity so WebKit audio engine NEVER throttles)
+            YouTubeBackgroundPlayerView()
+                .frame(width: 320, height: 240)
+                .allowsHitTesting(false)
+
+            // 2. Deep Solid Canvas (Completely covers background player visually)
+            AuraColors.background
+                .ignoresSafeArea()
+
+            // 3. Main Active Screen Container
             Group {
                 switch selectedTab {
                 case 0:
@@ -27,19 +36,19 @@ public struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Docked Player Bar & Bottom Navigation Stack
+            // 4. Floating Mini Player & Glassmorphic Navigation Bar
             VStack(spacing: 0) {
-                // Mini Player Bar (Sits directly above navigation)
+                // Docked Mini Player
                 if player.currentSong != nil {
                     PlayerBarView(onTap: {
                         showNowPlayingSheet = true
                     })
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 14)
                     .padding(.bottom, 8)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                // Sleek Glassmorphic Bottom Navigation Bar
+                // Glass Bottom Navigation Bar
                 customBottomBar
             }
             .background(
@@ -54,15 +63,8 @@ public struct ContentView: View {
                 )
                 .ignoresSafeArea(edges: .bottom)
             )
-
-            // Invisible Background WebKit Player (Keeps background audio active)
-            YouTubeBackgroundPlayerView()
-                .frame(width: 1, height: 1)
-                .opacity(0.01)
-                .allowsHitTesting(false)
         }
         .preferredColorScheme(.dark)
-        .background(AuraColors.background.ignoresSafeArea())
         .sheet(isPresented: $showNowPlayingSheet) {
             NowPlayingView(
                 onDismiss: { showNowPlayingSheet = false },
@@ -107,8 +109,6 @@ public struct ContentView: View {
                 Image(systemName: icon)
                     .font(.system(size: 20, weight: isSelected ? .bold : .medium))
                     .foregroundColor(isSelected ? AuraColors.cyan : AuraColors.textSecondary)
-                    .scaleEffect(isSelected ? 1.15 : 1.0)
-
                 Text(title)
                     .font(.system(size: 11, weight: isSelected ? .bold : .medium))
                     .foregroundColor(isSelected ? .white : AuraColors.textMuted)
