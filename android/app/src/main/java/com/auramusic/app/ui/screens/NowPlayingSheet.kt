@@ -89,10 +89,13 @@ fun NowPlayingSheet(
 
     var showQueueList by remember { mutableStateOf(false) }
 
-    if (currentSong == null) {
-        onDismiss()
-        return
+    androidx.compose.runtime.LaunchedEffect(currentSong) {
+        if (currentSong == null) {
+            onDismiss()
+        }
     }
+
+    if (currentSong == null) return
 
     val song = currentSong!!
     val isFav = favorites.contains(song.id)
@@ -267,12 +270,22 @@ fun NowPlayingSheet(
             Spacer(modifier = Modifier.height(12.dp))
 
             // Progress Slider
+            var isUserSeeking by remember { mutableStateOf(false) }
+            var seekPosition by remember { mutableStateOf(0f) }
+
             val maxProgress = if (durationMs > 0) durationMs.toFloat() else 1f
-            val currentProg = progressMs.toFloat().coerceIn(0f, maxProgress)
+            val currentProg = if (isUserSeeking) seekPosition else progressMs.toFloat().coerceIn(0f, maxProgress)
 
             Slider(
                 value = currentProg,
-                onValueChange = { PlaybackManager.seekTo(it.toLong()) },
+                onValueChange = {
+                    isUserSeeking = true
+                    seekPosition = it
+                },
+                onValueChangeFinished = {
+                    isUserSeeking = false
+                    PlaybackManager.seekTo(seekPosition.toLong())
+                },
                 valueRange = 0f..maxProgress,
                 colors = SliderDefaults.colors(
                     thumbColor = AuraAccent,

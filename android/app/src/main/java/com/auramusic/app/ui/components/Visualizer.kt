@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.auramusic.app.ui.theme.AuraAccent
@@ -87,7 +89,11 @@ fun AudioVisualizer(
             Box(
                 modifier = Modifier
                     .width(barWidth)
-                    .fillMaxHeight(scale)
+                    .fillMaxHeight()
+                    .graphicsLayer {
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(0.5f, 1f)
+                    }
                     .clip(RoundedCornerShape(2.dp))
                     .background(
                         Brush.verticalGradient(

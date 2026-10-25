@@ -64,7 +64,7 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(AuraBackground),
-        contentPadding = PaddingValues(bottom = 120.dp)
+        contentPadding = PaddingValues(bottom = 20.dp)
     ) {
         // App Header
         item {

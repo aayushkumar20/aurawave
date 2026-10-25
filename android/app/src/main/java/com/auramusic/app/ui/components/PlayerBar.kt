@@ -1,6 +1,7 @@
 package com.auramusic.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.auramusic.app.data.models.Song
+import com.auramusic.app.player.PlaybackManager
 import com.auramusic.app.ui.theme.AuraAccent
 import com.auramusic.app.ui.theme.AuraCardBorder
 import com.auramusic.app.ui.theme.AuraPrimary
@@ -39,10 +43,6 @@ import com.auramusic.app.ui.theme.AuraSurface
 import com.auramusic.app.ui.theme.AuraSurfaceLight
 import com.auramusic.app.ui.theme.AuraTextPrimary
 import com.auramusic.app.ui.theme.AuraTextSecondary
-
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import com.auramusic.app.player.PlaybackManager
 
 @Composable
 fun PlayerBar(
@@ -65,8 +65,9 @@ fun PlayerBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(AuraSurface)
+            .border(1.dp, AuraCardBorder, RoundedCornerShape(14.dp))
             .clickable(onClick = onClickBar)
     ) {
         // Progress line
@@ -82,7 +83,7 @@ fun PlayerBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Thumbnail
@@ -91,11 +92,11 @@ fun PlayerBar(
                 contentDescription = currentSong.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(42.dp)
                     .clip(RoundedCornerShape(8.dp))
             )
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             // Details
             Column(
@@ -105,14 +106,14 @@ fun PlayerBar(
                     text = currentSong.title,
                     color = AuraTextPrimary,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = currentSong.artist,
                     color = AuraTextSecondary,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -122,7 +123,7 @@ fun PlayerBar(
             IconButton(
                 onClick = onTogglePlay,
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
                     .background(AuraPrimary)
             ) {
@@ -130,22 +131,22 @@ fun PlayerBar(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = AuraTextPrimary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(4.dp))
 
             // Skip
             IconButton(
                 onClick = onSkipNext,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(34.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.SkipNext,
                     contentDescription = "Skip Next",
                     tint = AuraTextSecondary,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

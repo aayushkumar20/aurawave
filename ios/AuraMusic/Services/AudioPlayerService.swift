@@ -34,9 +34,14 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
     // Guard to prevent slider fighting during user drag
     public var isScrubbing: Bool = false
 
+    // Native Silent Audio Keep-Alive Loop for 100% Lock Screen & Background Playback
+    private var keepAlivePlayer: AVAudioPlayer?
+    private var isUserInitiatedPause: Bool = false
+
     private override init() {
         super.init()
         configureAudioSession()
+        setupKeepAliveAudio()
         setupBackgroundWebView()
         setupRemoteCommandCenter()
         loadLiveTrending()
@@ -47,16 +52,61 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
     // -------------------------------------------------------------
     public func configureAudioSession() {
         #if os(iOS)
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .default, policy: .default, options: [])
-                try session.setActive(true)
-            } catch {
-                print("[Aura Audio] Failed to configure AVAudioSession: \(error)")
-            }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, policy: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            print("[Aura Audio] Failed to configure AVAudioSession: \(error)")
         }
         #endif
+    }
+
+    private func setupKeepAliveAudio() {
+        // Generate an in-memory 1-second silent stereo PCM WAV buffer
+        let sampleRate: Double = 44100.0
+        let duration: Double = 1.0
+        let numSamples = Int(sampleRate * duration)
+        let numChannels: Int16 = 2
+        let bitsPerSample: Int16 = 16
+        let byteRate = Int32(sampleRate * Double(numChannels * (bitsPerSample / 8)))
+        let blockAlign = Int16(numChannels * (bitsPerSample / 8))
+        let dataSize = Int32(numSamples * Int(blockAlign))
+        let chunkSize = 36 + dataSize
+
+        var wavData = Data()
+        wavData.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
+        var cs = chunkSize.littleEndian
+        wavData.append(Data(bytes: &cs, count: 4))
+        wavData.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
+        wavData.append(contentsOf: [0x66, 0x6d, 0x74, 0x20]) // "fmt "
+        var subchunk1Size: Int32 = 16
+        wavData.append(Data(bytes: &subchunk1Size, count: 4))
+        var audioFormat: Int16 = 1 // PCM
+        wavData.append(Data(bytes: &audioFormat, count: 2))
+        var nc = numChannels.littleEndian
+        wavData.append(Data(bytes: &nc, count: 2))
+        var sr = Int32(sampleRate).littleEndian
+        wavData.append(Data(bytes: &sr, count: 4))
+        var br = byteRate.littleEndian
+        wavData.append(Data(bytes: &br, count: 4))
+        var ba = blockAlign.littleEndian
+        wavData.append(Data(bytes: &ba, count: 2))
+        var bps = bitsPerSample.littleEndian
+        wavData.append(Data(bytes: &bps, count: 2))
+        wavData.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
+        var ds = dataSize.littleEndian
+        wavData.append(Data(bytes: &ds, count: 4))
+        wavData.append(Data(count: Int(dataSize)))
+
+        do {
+            let player = try AVAudioPlayer(data: wavData)
+            player.numberOfLoops = -1 // Infinite loop
+            player.volume = 0.01 // Minimal non-zero volume so CoreAudio never sleeps
+            self.keepAlivePlayer = player
+        } catch {
+            print("[Aura Audio] Failed to create keepAlivePlayer: \(error)")
+        }
     }
 
     // -------------------------------------------------------------
@@ -88,6 +138,17 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
           html, body { width:100%; height:100%; background:#000000; overflow:hidden; }
           #player { width:100% !important; height:100% !important; }
         </style>
+        <script>
+          // Block background auto-pause: prevent YouTube from pausing when iOS locks screen
+          try {
+            Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+            Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+            Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
+            document.hasFocus = function() { return true; };
+            window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+            document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+          } catch(e) {}
+        </script>
         <script src="https://www.youtube.com/iframe_api"></script>
         </head>
         <body>
@@ -170,7 +231,26 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
           }
         }
 
+        var isUserPaused = false;
+
+        function playTrack(vid) {
+          isUserPaused = false;
+          if (!isReady || !player || typeof player.loadVideoById !== 'function') {
+            pendingId = vid;
+            return;
+          }
+          try {
+            player.unMute();
+            player.setVolume(100);
+            player.loadVideoById(vid);
+            player.playVideo();
+          } catch(err) {
+            pendingId = vid;
+          }
+        }
+
         function resumeTrack() {
+          isUserPaused = false;
           if (player && typeof player.playVideo === 'function') {
             try {
               player.unMute();
@@ -181,6 +261,7 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         }
 
         function pauseTrack() {
+          isUserPaused = true;
           if (player && typeof player.pauseVideo === 'function') {
             try { player.pauseVideo(); } catch(e) {}
           }
@@ -191,6 +272,36 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
             try { player.seekTo(sec, true); } catch(e) {}
           }
         }
+
+        // Lock screen keep-alive: prevent WebKit from suspending audio when display turns off
+        document.addEventListener("visibilitychange", function() {
+          if (!isUserPaused && player && typeof player.playVideo === 'function') {
+            try { player.playVideo(); } catch(e) {}
+          }
+        });
+        window.addEventListener("pagehide", function() {
+          if (!isUserPaused && player && typeof player.playVideo === 'function') {
+            try { player.playVideo(); } catch(e) {}
+          }
+        });
+
+        // Intercept any unwanted pause event from iOS WebKit when screen locks
+        document.addEventListener("pause", function(e) {
+          if (!isUserPaused && player && typeof player.playVideo === 'function') {
+            try { player.playVideo(); } catch(err) {}
+          }
+        }, true);
+
+        // Active Watchdog: Auto-resumes within 250ms if lock screen triggers unexpected pause
+        setInterval(function() {
+          if (!isUserPaused && isReady && player && typeof player.getPlayerState === 'function') {
+            try {
+              if (player.getPlayerState() === 2) {
+                player.playVideo();
+              }
+            } catch(err) {}
+          }
+        }, 250);
         </script>
         </body>
         </html>
@@ -216,7 +327,12 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
                     if state == 1 { // Playing
                         self.isPlaying = true
                     } else if state == 2 { // Paused
-                        self.isPlaying = false
+                        if self.isUserInitiatedPause {
+                            self.isPlaying = false
+                        } else {
+                            // System or lock screen attempted to pause; keep playing!
+                            self.webView?.evaluateJavaScript("resumeTrack();")
+                        }
                     } else if state == 0 { // Ended
                         if self.repeatMode == .one {
                             self.seek(to: 0)
@@ -264,6 +380,8 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
     // -------------------------------------------------------------
     public func playSong(_ song: Song) {
         configureAudioSession()
+        keepAlivePlayer?.play()
+        isUserInitiatedPause = false
 
         if let idx = queue.firstIndex(where: { $0.id == song.id }) {
             currentIndex = idx
@@ -298,11 +416,15 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
 
     public func play() {
         configureAudioSession()
+        keepAlivePlayer?.play()
+        isUserInitiatedPause = false
         webView?.evaluateJavaScript("resumeTrack();")
         isPlaying = true
     }
 
     public func pause() {
+        isUserInitiatedPause = true
+        keepAlivePlayer?.pause()
         webView?.evaluateJavaScript("pauseTrack();")
         isPlaying = false
     }

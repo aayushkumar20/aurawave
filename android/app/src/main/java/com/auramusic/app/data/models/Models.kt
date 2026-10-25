@@ -7,6 +7,7 @@ data class Song(
     val album: String = "YouTube Music Single",
     val durationText: String = "3:30",
     val durationMs: Long = 210000L,
+    val durationSeconds: Double = 210.0,
     val thumbnailUrl: String,
     val streamUrl: String? = null,
     val isFavorite: Boolean = false

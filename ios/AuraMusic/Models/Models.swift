@@ -7,9 +7,14 @@ public struct Song: Identifiable, Codable, Equatable {
     public let album: String
     public let durationText: String
     public let durationSeconds: Double
+    public let durationMs: Double
     public let thumbnailUrl: String
     public var streamUrl: String?
     public var isFavorite: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, artist, album, durationText, durationSeconds, durationMs, thumbnailUrl, streamUrl, isFavorite
+    }
 
     public init(
         id: String,
@@ -18,6 +23,7 @@ public struct Song: Identifiable, Codable, Equatable {
         album: String = "YouTube Music Single",
         durationText: String = "3:30",
         durationSeconds: Double = 210,
+        durationMs: Double? = nil,
         thumbnailUrl: String,
         streamUrl: String? = nil,
         isFavorite: Bool = false
@@ -28,9 +34,48 @@ public struct Song: Identifiable, Codable, Equatable {
         self.album = album
         self.durationText = durationText
         self.durationSeconds = durationSeconds
+        self.durationMs = durationMs ?? (durationSeconds * 1000.0)
         self.thumbnailUrl = thumbnailUrl
         self.streamUrl = streamUrl
         self.isFavorite = isFavorite
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Unknown Song"
+        artist = try container.decodeIfPresent(String.self, forKey: .artist) ?? "Unknown Artist"
+        album = try container.decodeIfPresent(String.self, forKey: .album) ?? "YouTube Music Single"
+        durationText = try container.decodeIfPresent(String.self, forKey: .durationText) ?? "3:30"
+        thumbnailUrl = try container.decodeIfPresent(String.self, forKey: .thumbnailUrl) ?? ""
+        streamUrl = try container.decodeIfPresent(String.self, forKey: .streamUrl)
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+
+        // Cross-platform duration compatibility
+        if let sec = try? container.decode(Double.self, forKey: .durationSeconds) {
+            durationSeconds = sec
+            durationMs = (try? container.decode(Double.self, forKey: .durationMs)) ?? (sec * 1000.0)
+        } else if let ms = try? container.decode(Double.self, forKey: .durationMs) {
+            durationMs = ms
+            durationSeconds = ms / 1000.0
+        } else {
+            durationSeconds = 210.0
+            durationMs = 210000.0
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(artist, forKey: .artist)
+        try container.encode(album, forKey: .album)
+        try container.encode(durationText, forKey: .durationText)
+        try container.encode(durationSeconds, forKey: .durationSeconds)
+        try container.encode(durationMs, forKey: .durationMs)
+        try container.encode(thumbnailUrl, forKey: .thumbnailUrl)
+        try container.encodeIfPresent(streamUrl, forKey: .streamUrl)
+        try container.encode(isFavorite, forKey: .isFavorite)
     }
 }
 
@@ -87,7 +132,11 @@ public struct ChatMessage: Identifiable, Codable, Equatable {
     public let timestamp: Date
     public let sharedSong: Song?
     public var reactions: [String: Int]
-    public let isFromMe: Bool
+    public var isFromMe: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, senderId, senderName, text, timestamp, sharedSong, reactions, isFromMe
+    }
 
     public init(
         id: String,
@@ -107,6 +156,43 @@ public struct ChatMessage: Identifiable, Codable, Equatable {
         self.sharedSong = sharedSong
         self.reactions = reactions
         self.isFromMe = isFromMe
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        senderId = try container.decodeIfPresent(String.self, forKey: .senderId) ?? ""
+        senderName = try container.decodeIfPresent(String.self, forKey: .senderName) ?? "Aura User"
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        sharedSong = try container.decodeIfPresent(Song.self, forKey: .sharedSong)
+        reactions = try container.decodeIfPresent([String: Int].self, forKey: .reactions) ?? [:]
+        isFromMe = try container.decodeIfPresent(Bool.self, forKey: .isFromMe) ?? false
+
+        // Cross-platform timestamp handling (epoch ms, epoch seconds, or ISO Date)
+        if let tsDouble = try? container.decode(Double.self, forKey: .timestamp) {
+            if tsDouble > 100_000_000_000 { // Milliseconds
+                timestamp = Date(timeIntervalSince1970: tsDouble / 1000.0)
+            } else { // Seconds
+                timestamp = Date(timeIntervalSince1970: tsDouble)
+            }
+        } else if let dateVal = try? container.decode(Date.self, forKey: .timestamp) {
+            timestamp = dateVal
+        } else {
+            timestamp = Date()
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(senderId, forKey: .senderId)
+        try container.encode(senderName, forKey: .senderName)
+        try container.encode(text, forKey: .text)
+        // Store timestamp as Unix milliseconds (standard across Android & Web)
+        try container.encode(timestamp.timeIntervalSince1970 * 1000.0, forKey: .timestamp)
+        try container.encodeIfPresent(sharedSong, forKey: .sharedSong)
+        try container.encode(reactions, forKey: .reactions)
+        try container.encode(isFromMe, forKey: .isFromMe)
     }
 }
 

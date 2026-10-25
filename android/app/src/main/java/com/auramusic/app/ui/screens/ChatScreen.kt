@@ -1,5 +1,6 @@
 package com.auramusic.app.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,9 +22,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cake
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
@@ -31,6 +38,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -38,6 +46,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +57,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,28 +82,43 @@ import com.auramusic.app.ui.theme.AuraTextMuted
 import com.auramusic.app.ui.theme.AuraTextPrimary
 import com.auramusic.app.ui.theme.AuraTextSecondary
 
+enum class RoomJoinMode {
+    BROWSE, JOIN_BY_ID, CREATE_ROOM
+}
+
 @Composable
 fun ChatScreen() {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
     val profile by ChatManager.currentProfile.collectAsState()
     val currentRoom by ChatManager.currentRoom.collectAsState()
+    val availableRooms by ChatManager.availableRooms.collectAsState()
     val messages by ChatManager.messages.collectAsState()
     val currentSong by PlaybackManager.currentSong.collectAsState()
 
     var inputName by remember { mutableStateOf("") }
     var inputDob by remember { mutableStateOf("") }
-    var selectedRoom by remember { mutableStateOf(ChatManager.defaultRooms[0]) }
+    var selectedRoom by remember { mutableStateOf(availableRooms.firstOrNull() ?: ChatManager.defaultRooms[0]) }
+
+    var joinMode by remember { mutableStateOf(RoomJoinMode.BROWSE) }
+    var inputRoomIdToJoin by remember { mutableStateOf("") }
+    var inputCustomRoomName by remember { mutableStateOf("") }
+    var inputCustomRoomDesc by remember { mutableStateOf("") }
 
     var textInput by remember { mutableStateOf("") }
     var showEmojiBar by remember { mutableStateOf(false) }
     var showRoomSwitchModal by remember { mutableStateOf(false) }
+    var showCreateGroupDialog by remember { mutableStateOf(false) }
+    var showJoinByIdDialog by remember { mutableStateOf(false) }
 
     if (profile == null) {
-        // Room Entry Gate (User requested: Just enter Name and DOB to join chat)
+        // Room Entry Gate
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(AuraBackground)
-                .padding(24.dp),
+                .padding(20.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -100,12 +127,12 @@ fun ChatScreen() {
                     .clip(RoundedCornerShape(20.dp))
                     .background(AuraSurface)
                     .border(1.dp, AuraCardBorder, RoundedCornerShape(20.dp))
-                    .padding(24.dp),
+                    .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
                     modifier = Modifier
-                        .size(60.dp)
+                        .size(54.dp)
                         .clip(CircleShape)
                         .background(AuraPrimary.copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
@@ -114,25 +141,25 @@ fun ChatScreen() {
                         imageVector = Icons.Default.MeetingRoom,
                         contentDescription = null,
                         tint = AuraAccent,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Join Music Chat Room",
+                    text = "Aura Live Chat & Groups",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = AuraTextPrimary
                 )
 
                 Text(
-                    text = "Enter your Name & DOB to jump right into the live room",
+                    text = "Listen together, share music & chat in real time",
                     fontSize = 12.sp,
                     color = AuraTextMuted,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
+                    modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
                 )
 
                 // Name Input
@@ -153,7 +180,7 @@ fun ChatScreen() {
                     )
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // DOB Input
                 OutlinedTextField(
@@ -173,55 +200,172 @@ fun ChatScreen() {
                     )
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Select Room Chips
-                Text(
-                    text = "Choose Room:",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = AuraTextSecondary,
-                    modifier = Modifier.align(Alignment.Start)
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                // Mode Tabs (Browse Public, Join with ID, Create Group)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AuraSurfaceLight)
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    items(ChatManager.defaultRooms) { r ->
-                        val isSel = selectedRoom.id == r.id
+                    val tabs = listOf(
+                        RoomJoinMode.BROWSE to "Rooms",
+                        RoomJoinMode.JOIN_BY_ID to "Join with ID",
+                        RoomJoinMode.CREATE_ROOM to "+ Create Group"
+                    )
+                    tabs.forEach { (mode, label) ->
+                        val isSelected = joinMode == mode
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSel) AuraPrimary else AuraSurfaceLight)
-                                .clickable { selectedRoom = r }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) AuraPrimary else AuraSurfaceLight)
+                                .clickable { joinMode = mode }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = r.name,
+                                text = label,
                                 fontSize = 11.sp,
-                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                color = AuraTextPrimary
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) AuraTextPrimary else AuraTextMuted,
+                                maxLines = 1
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                Button(
-                    onClick = {
-                        if (inputName.isNotBlank() && inputDob.isNotBlank()) {
-                            ChatManager.joinRoom(inputName, inputDob, selectedRoom)
+                when (joinMode) {
+                    RoomJoinMode.BROWSE -> {
+                        Text(
+                            text = "Select a Room to Enter:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AuraTextSecondary,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(availableRooms) { r ->
+                                val isSel = selectedRoom.id == r.id
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isSel) AuraPrimary else AuraSurfaceLight)
+                                        .clickable { selectedRoom = r }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = r.name,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                            color = AuraTextPrimary
+                                        )
+                                        Text(
+                                            text = "ID: ${r.id}",
+                                            fontSize = 10.sp,
+                                            color = if (isSel) AuraAccent else AuraTextMuted
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    },
-                    enabled = inputName.isNotBlank() && inputDob.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = AuraPrimary)
-                ) {
-                    Text("Enter Room 🚀", color = AuraTextPrimary, fontWeight = FontWeight.Bold)
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        Button(
+                            onClick = {
+                                if (inputName.isNotBlank() && inputDob.isNotBlank()) {
+                                    ChatManager.joinRoom(inputName, inputDob, selectedRoom)
+                                }
+                            },
+                            enabled = inputName.isNotBlank() && inputDob.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = AuraPrimary)
+                        ) {
+                            Text("Enter #${selectedRoom.name} 🚀", color = AuraTextPrimary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    RoomJoinMode.JOIN_BY_ID -> {
+                        OutlinedTextField(
+                            value = inputRoomIdToJoin,
+                            onValueChange = { inputRoomIdToJoin = it.uppercase() },
+                            placeholder = { Text("Enter Group ID (e.g. AURA-4821)", color = AuraTextMuted) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Key, contentDescription = null, tint = AuraAccent)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AuraAccent,
+                                unfocusedBorderColor = AuraSurfaceLight,
+                                focusedTextColor = AuraTextPrimary,
+                                unfocusedTextColor = AuraTextPrimary
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        Button(
+                            onClick = {
+                                if (inputName.isNotBlank() && inputDob.isNotBlank() && inputRoomIdToJoin.isNotBlank()) {
+                                    ChatManager.joinRoomById(inputName, inputDob, inputRoomIdToJoin)
+                                }
+                            },
+                            enabled = inputName.isNotBlank() && inputDob.isNotBlank() && inputRoomIdToJoin.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = AuraAccent)
+                        ) {
+                            Text("Join Group via ID 🚀", color = AuraBackground, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    RoomJoinMode.CREATE_ROOM -> {
+                        OutlinedTextField(
+                            value = inputCustomRoomName,
+                            onValueChange = { inputCustomRoomName = it },
+                            placeholder = { Text("New Group Name (e.g. Beats & Vibes)", color = AuraTextMuted) },
+                            leadingIcon = {
+                                Icon(Icons.Default.GroupAdd, contentDescription = null, tint = AuraAccent)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AuraAccent,
+                                unfocusedBorderColor = AuraSurfaceLight,
+                                focusedTextColor = AuraTextPrimary,
+                                unfocusedTextColor = AuraTextPrimary
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        Button(
+                            onClick = {
+                                if (inputName.isNotBlank() && inputDob.isNotBlank() && inputCustomRoomName.isNotBlank()) {
+                                    val newRoom = ChatManager.createAndJoinRoom(inputName, inputDob, inputCustomRoomName)
+                                    Toast.makeText(context, "Group Created! ID: ${newRoom.id}", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            enabled = inputName.isNotBlank() && inputDob.isNotBlank() && inputCustomRoomName.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = AuraPrimary)
+                        ) {
+                            Text("Create & Join Group 🚀", color = AuraTextPrimary, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
@@ -241,39 +385,63 @@ fun ChatScreen() {
             modifier = Modifier
                 .fillMaxWidth()
                 .background(AuraSurface)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "#${currentRoom.name}",
                         color = AuraTextPrimary,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Box(
                         modifier = Modifier
-                            .size(8.dp)
+                            .size(7.dp)
                             .clip(CircleShape)
                             .background(AuraSuccess)
                     )
                 }
-                Text(
-                    text = "${activeProfile.name} • ${currentRoom.description}",
-                    color = AuraTextMuted,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+
+                // Clickable Unique Group ID Pill
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(AuraSurfaceLight)
+                        .clickable {
+                            clipboardManager.setText(AnnotatedString(currentRoom.id))
+                            Toast.makeText(context, "Group ID copied: ${currentRoom.id}", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "ID: ${currentRoom.id}",
+                        color = AuraAccent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy Group ID",
+                        tint = AuraTextSecondary,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Switch / Manage Room
                 IconButton(
                     onClick = { showRoomSwitchModal = !showRoomSwitchModal },
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(34.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.SwapHoriz,
@@ -295,11 +463,11 @@ fun ChatScreen() {
                         imageVector = Icons.Default.CloudDone,
                         contentDescription = "Firebase DB",
                         tint = AuraAccent,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Firebase",
+                        text = "Live",
                         color = AuraAccent,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
@@ -310,31 +478,78 @@ fun ChatScreen() {
 
         // Room Switcher Bar (Expandable)
         if (showRoomSwitchModal) {
-            LazyRow(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(AuraSurfaceLight)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                items(ChatManager.defaultRooms) { room ->
-                    val isCurrent = currentRoom.id == room.id
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isCurrent) AuraPrimary else AuraSurface)
-                            .clickable {
-                                ChatManager.switchRoom(room)
-                                showRoomSwitchModal = false
-                            }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Switch or Create Group:",
+                        fontSize = 11.sp,
+                        color = AuraTextSecondary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Row {
                         Text(
-                            text = room.name,
-                            color = AuraTextPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                            text = "+ Create",
+                            color = AuraAccent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable {
+                                    showCreateGroupDialog = true
+                                    showRoomSwitchModal = false
+                                }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Join with ID",
+                            color = AuraPink,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable {
+                                    showJoinByIdDialog = true
+                                    showRoomSwitchModal = false
+                                }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(availableRooms) { room ->
+                        val isCurrent = currentRoom.id == room.id
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isCurrent) AuraPrimary else AuraSurface)
+                                .clickable {
+                                    ChatManager.switchRoom(room)
+                                    showRoomSwitchModal = false
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "${room.name} (${room.id})",
+                                color = AuraTextPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     }
                 }
             }
@@ -344,8 +559,8 @@ fun ChatScreen() {
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(vertical = 12.dp),
+                .padding(horizontal = 14.dp),
+            contentPadding = PaddingValues(vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(messages) { message ->
@@ -363,7 +578,7 @@ fun ChatScreen() {
             modifier = Modifier
                 .fillMaxWidth()
                 .background(AuraSurface)
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             // "Share Current Playing Song" chip
             if (currentSong != null) {
@@ -384,7 +599,7 @@ fun ChatScreen() {
                         imageVector = Icons.Default.MusicNote,
                         contentDescription = null,
                         tint = AuraAccent,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
@@ -396,7 +611,7 @@ fun ChatScreen() {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
             // Quick Emoji Tray
@@ -405,7 +620,7 @@ fun ChatScreen() {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp)
+                        .padding(bottom = 6.dp)
                 ) {
                     items(ChatManager.popularEmojis) { emoji ->
                         Box(
@@ -415,10 +630,10 @@ fun ChatScreen() {
                                 .clickable {
                                     textInput += emoji
                                 }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = emoji, fontSize = 20.sp)
+                            Text(text = emoji, fontSize = 18.sp)
                         }
                     }
                 }
@@ -430,13 +645,13 @@ fun ChatScreen() {
             ) {
                 IconButton(
                     onClick = { showEmojiBar = !showEmojiBar },
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(38.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.EmojiEmotions,
                         contentDescription = "Emojis",
                         tint = if (showEmojiBar) AuraAccent else AuraTextSecondary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
@@ -448,7 +663,7 @@ fun ChatScreen() {
                     placeholder = { Text("Message #${currentRoom.name}...", color = AuraTextMuted) },
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(24.dp)),
+                        .clip(RoundedCornerShape(22.dp)),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = AuraAccent,
                         unfocusedBorderColor = AuraSurfaceLight,
@@ -460,7 +675,7 @@ fun ChatScreen() {
                     singleLine = true
                 )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
                 IconButton(
                     onClick = {
@@ -470,7 +685,7 @@ fun ChatScreen() {
                         }
                     },
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(42.dp)
                         .clip(CircleShape)
                         .background(AuraPrimary)
                 ) {
@@ -478,11 +693,107 @@ fun ChatScreen() {
                         imageVector = Icons.Default.Send,
                         contentDescription = "Send",
                         tint = AuraTextPrimary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
         }
+    }
+
+    // Create Group Dialog
+    if (showCreateGroupDialog) {
+        var newGroupName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showCreateGroupDialog = false },
+            title = { Text("Create New Group", color = AuraTextPrimary, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Enter a name for your group. A unique Group ID will be generated so your friends can join instantly.", color = AuraTextMuted, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = newGroupName,
+                        onValueChange = { newGroupName = it },
+                        label = { Text("Group Name") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AuraAccent,
+                            unfocusedBorderColor = AuraSurfaceLight,
+                            focusedTextColor = AuraTextPrimary,
+                            unfocusedTextColor = AuraTextPrimary
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newGroupName.isNotBlank()) {
+                            val room = ChatManager.createRoom(newGroupName)
+                            ChatManager.switchRoom(room)
+                            clipboardManager.setText(AnnotatedString(room.id))
+                            Toast.makeText(context, "Group Created! ID copied: ${room.id}", Toast.LENGTH_LONG).show()
+                            showCreateGroupDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AuraPrimary)
+                ) {
+                    Text("Create & Join", color = AuraTextPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateGroupDialog = false }) {
+                    Text("Cancel", color = AuraTextMuted)
+                }
+            },
+            containerColor = AuraSurface
+        )
+    }
+
+    // Join Group by ID Dialog
+    if (showJoinByIdDialog) {
+        var inputId by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showJoinByIdDialog = false },
+            title = { Text("Join Group with ID", color = AuraTextPrimary, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Enter the unique Group ID shared by your friend (e.g. AURA-4821)", color = AuraTextMuted, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = inputId,
+                        onValueChange = { inputId = it.uppercase() },
+                        label = { Text("Group ID") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AuraAccent,
+                            unfocusedBorderColor = AuraSurfaceLight,
+                            focusedTextColor = AuraTextPrimary,
+                            unfocusedTextColor = AuraTextPrimary
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (inputId.isNotBlank() && profile != null) {
+                            ChatManager.joinRoomById(profile!!.name, profile!!.dob, inputId)
+                            Toast.makeText(context, "Joined Group: ${inputId.uppercase()}", Toast.LENGTH_SHORT).show()
+                            showJoinByIdDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AuraAccent)
+                ) {
+                    Text("Join Group", color = AuraBackground, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showJoinByIdDialog = false }) {
+                    Text("Cancel", color = AuraTextMuted)
+                }
+            },
+            containerColor = AuraSurface
+        )
     }
 }
 
@@ -656,4 +967,3 @@ fun MessageBubble(
         }
     }
 }
-

@@ -4,8 +4,6 @@ import Combine
 public final class ChatService: ObservableObject {
     public static let shared = ChatService()
 
-    public var firebaseDatabaseUrl = "https://linuxvm-d10a3-default-rtdb.firebaseio.com"
-
     public let popularEmojis = ["❤️", "🔥", "🎧", "👏", "😂", "😮", "🚀", "✨", "🎵"]
 
     public let defaultRooms: [ChatRoom] = [
@@ -14,6 +12,7 @@ public final class ChatService: ObservableObject {
         ChatRoom(id: "room_edm", name: "Bass & Electronic", description: "Fast tempos, heavy drops, and hype tracks", activeListeners: 14)
     ]
 
+    @Published public var availableRooms: [ChatRoom] = []
     @Published public var currentProfile: RoomProfile?
     @Published public var currentRoom: ChatRoom
     @Published public var messages: [ChatMessage] = []
@@ -21,7 +20,59 @@ public final class ChatService: ObservableObject {
     private var syncTimer: Timer?
 
     private init() {
+        self.availableRooms = defaultRooms
         self.currentRoom = defaultRooms[0]
+    }
+
+    public static func normalizedTopic(for roomId: String) -> String {
+        let clean = roomId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        return "aura_music_\(clean)"
+    }
+
+    // -------------------------------------------------------------
+    // Room Creation & Joining (Cross-Platform with Android)
+    // -------------------------------------------------------------
+    public func createRoom(name: String, description: String = "") -> ChatRoom {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Aura Lounge" : name
+        let randomNum = Int.random(in: 1000...9999)
+        let uniqueId = "AURA-\(randomNum)"
+        let desc = description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Live Group • Code: \(uniqueId)" : description
+
+        let newRoom = ChatRoom(
+            id: uniqueId,
+            name: trimmed,
+            description: desc,
+            activeListeners: 1
+        )
+
+        if !availableRooms.contains(where: { $0.id == newRoom.id }) {
+            availableRooms.insert(newRoom, at: 0)
+        }
+        return newRoom
+    }
+
+    public func joinRoomById(name: String, dob: String, roomId: String) -> Bool {
+        let cleanId = roomId.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !cleanId.isEmpty else { return false }
+
+        let existing = availableRooms.first { $0.id.caseInsensitiveCompare(cleanId) == .orderedSame }
+        let target = existing ?? ChatRoom(
+            id: cleanId,
+            name: cleanId,
+            description: "Group Room • ID: \(cleanId)",
+            activeListeners: 1
+        )
+
+        joinRoom(name: name, dob: dob, room: target)
+        return true
+    }
+
+    public func createAndJoinRoom(userName: String, userDob: String, roomName: String, description: String = "") -> ChatRoom {
+        let room = createRoom(name: roomName, description: description)
+        joinRoom(name: userName, dob: userDob, room: room)
+        return room
     }
 
     public func joinRoom(name: String, dob: String, room: ChatRoom? = nil) {
@@ -32,11 +83,15 @@ public final class ChatService: ObservableObject {
         self.currentProfile = RoomProfile(name: trimmedName, dob: trimmedDob)
         self.currentRoom = selected
 
+        if !availableRooms.contains(where: { $0.id == selected.id }) {
+            availableRooms.insert(selected, at: 0)
+        }
+
         let welcome = ChatMessage(
             id: "sys_welcome_\(Int(Date().timeIntervalSince1970 * 1000))",
             senderId: "system",
             senderName: "Aura Room Bot",
-            text: "🎉 Welcome \(trimmedName) to #\(selected.name)! Share any YouTube Music song live, chat, or react with emojis.",
+            text: "🎉 Welcome \(trimmedName) to #\(selected.name)! Room Code: \(selected.id). Chat, share music live, and react in real time.",
             reactions: ["✨": 1],
             isFromMe: false
         )
@@ -47,6 +102,9 @@ public final class ChatService: ObservableObject {
 
     public func switchRoom(_ room: ChatRoom) {
         self.currentRoom = room
+        if !availableRooms.contains(where: { $0.id == room.id }) {
+            availableRooms.insert(room, at: 0)
+        }
         self.messages = []
         startLiveSync()
     }
@@ -58,6 +116,9 @@ public final class ChatService: ObservableObject {
         messages = []
     }
 
+    // -------------------------------------------------------------
+    // Real-Time Messaging & Reactions
+    // -------------------------------------------------------------
     public func addReaction(to messageId: String, emoji: String) {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
         var msg = messages[idx]
@@ -69,13 +130,14 @@ public final class ChatService: ObservableObject {
 
     public func sendMessage(text: String, sharedSong: Song? = nil) {
         guard let profile = currentProfile else { return }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sharedSong != nil else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || sharedSong != nil else { return }
 
         let newMsg = ChatMessage(
-            id: "msg_\(Int(Date().timeIntervalSince1970 * 1000))",
+            id: "msg_\(Int(Date().timeIntervalSince1970 * 1000))_\(Int.random(in: 100...999))",
             senderId: profile.userId,
             senderName: profile.name,
-            text: text,
+            text: trimmed,
             timestamp: Date(),
             sharedSong: sharedSong,
             reactions: [:],
@@ -88,39 +150,36 @@ public final class ChatService: ObservableObject {
 
     private func startLiveSync() {
         syncTimer?.invalidate()
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+        // Immediate fetch upon joining
+        pollRoomUpdates()
+        // Fast 1.5s real-time poll
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.pollRoomUpdates()
         }
     }
 
     private func broadcastMessage(_ message: ChatMessage) {
-        let roomId = currentRoom.id
+        let topic = Self.normalizedTopic(for: currentRoom.id)
         guard let payloadData = try? JSONEncoder().encode(message) else { return }
 
-        // 1. Send to Firebase
-        if let fbUrl = URL(string: "\(firebaseDatabaseUrl)/rooms/\(roomId)/messages/\(message.id).json") {
-            var req = URLRequest(url: fbUrl)
-            req.httpMethod = "PUT"
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = payloadData
-            URLSession.shared.dataTask(with: req).resume()
-        }
-
-        // 2. Send to instant realtime pubsub relay
-        if let relayUrl = URL(string: "https://ntfy.sh/aura_music_\(roomId)") {
-            var req = URLRequest(url: relayUrl)
-            req.httpMethod = "POST"
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = payloadData
-            URLSession.shared.dataTask(with: req).resume()
-        }
+        // Fast realtime pubsub relay
+        guard let relayUrl = URL(string: "https://ntfy.sh/\(topic)") else { return }
+        var req = URLRequest(url: relayUrl)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = payloadData
+        URLSession.shared.dataTask(with: req).resume()
     }
 
     private func pollRoomUpdates() {
         guard let profile = currentProfile else { return }
-        guard let url = URL(string: "https://ntfy.sh/aura_music_\(currentRoom.id)/json?poll=1&since=1m") else { return }
+        let topic = Self.normalizedTopic(for: currentRoom.id)
+        guard let url = URL(string: "https://ntfy.sh/\(topic)/json?poll=1&since=12h") else { return }
 
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 4.0
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self, let data = data,
                   let stringData = String(data: data, encoding: .utf8) else { return }
 
@@ -134,18 +193,27 @@ public final class ChatService: ObservableObject {
                       let msgData = msgString.data(using: .utf8),
                       let parsed = try? JSONDecoder().decode(ChatMessage.self, from: msgData) else { continue }
 
-                if parsed.senderId != profile.userId {
-                    var copy = parsed
-                    // copy is not from me
-                    newMessages.append(copy)
-                }
+                var copy = parsed
+                copy.isFromMe = (parsed.senderId == profile.userId)
+                newMessages.append(copy)
             }
 
             if !newMessages.isEmpty {
                 DispatchQueue.main.async {
                     var map = Dictionary(uniqueKeysWithValues: self.messages.map { ($0.id, $0) })
                     for m in newMessages {
-                        map[m.id] = m
+                        // Merge or update reaction counts
+                        if let existing = map[m.id] {
+                            var mergedReactions = existing.reactions
+                            for (emoji, count) in m.reactions {
+                                mergedReactions[emoji] = max(mergedReactions[emoji] ?? 0, count)
+                            }
+                            var updated = m
+                            updated.reactions = mergedReactions
+                            map[m.id] = updated
+                        } else {
+                            map[m.id] = m
+                        }
                     }
                     self.messages = map.values.sorted(by: { $0.timestamp < $1.timestamp })
                 }

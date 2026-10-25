@@ -42,6 +42,9 @@ object ChatManager {
         ChatRoom("room_edm", "Bass & Electronic", "Fast tempos, heavy drops, and hype tracks", 14)
     )
 
+    private val _availableRooms = MutableStateFlow<List<ChatRoom>>(defaultRooms)
+    val availableRooms: StateFlow<List<ChatRoom>> = _availableRooms.asStateFlow()
+
     private val _currentProfile = MutableStateFlow<RoomProfile?>(null)
     val currentProfile: StateFlow<RoomProfile?> = _currentProfile.asStateFlow()
 
@@ -50,6 +53,47 @@ object ChatManager {
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+
+    fun createRoom(name: String, description: String = ""): ChatRoom {
+        val trimmed = name.trim().ifBlank { "Aura Lounge" }
+        val randomNum = (1000..9999).random()
+        val uniqueId = "AURA-$randomNum"
+        val desc = description.trim().ifBlank { "Live Group • Code: $uniqueId" }
+
+        val newRoom = ChatRoom(
+            id = uniqueId,
+            name = trimmed,
+            description = desc,
+            activeListeners = 1
+        )
+
+        val current = _availableRooms.value.toMutableList()
+        current.add(0, newRoom)
+        _availableRooms.value = current
+        return newRoom
+    }
+
+    fun joinRoomById(name: String, dob: String, roomId: String): Boolean {
+        val cleanId = roomId.trim().uppercase()
+        if (cleanId.isBlank()) return false
+
+        val existing = _availableRooms.value.find { it.id.equals(cleanId, ignoreCase = true) }
+        val targetRoom = existing ?: ChatRoom(
+            id = cleanId,
+            name = cleanId,
+            description = "Group Room • ID: $cleanId",
+            activeListeners = 1
+        )
+
+        joinRoom(name, dob, targetRoom)
+        return true
+    }
+
+    fun createAndJoinRoom(userName: String, userDob: String, roomName: String, description: String = ""): ChatRoom {
+        val newRoom = createRoom(roomName, description)
+        joinRoom(userName, userDob, newRoom)
+        return newRoom
+    }
 
     fun joinRoom(name: String, dob: String, room: ChatRoom = defaultRooms[0]) {
         val trimmedName = name.trim().ifBlank { "AuraListener" }
@@ -62,11 +106,16 @@ object ChatManager {
         _currentProfile.value = profile
         _currentRoom.value = room
 
+        // Ensure room is in available list
+        if (_availableRooms.value.none { it.id == room.id }) {
+            _availableRooms.value = listOf(room) + _availableRooms.value
+        }
+
         val welcomeMsg = ChatMessage(
             id = "sys_welcome_${System.currentTimeMillis()}",
             senderId = "system",
             senderName = "Aura Room Bot",
-            text = "🎉 Welcome $trimmedName to #${room.name}! Share any YouTube Music song live, chat, or react with emojis.",
+            text = "🎉 Welcome $trimmedName to #${room.name}! Room ID: ${room.id}. Share songs live, chat, or invite friends with this Room ID.",
             reactions = mapOf("✨" to 1),
             isFromMe = false
         )
@@ -77,6 +126,9 @@ object ChatManager {
 
     fun switchRoom(room: ChatRoom) {
         _currentRoom.value = room
+        if (_availableRooms.value.none { it.id == room.id }) {
+            _availableRooms.value = listOf(room) + _availableRooms.value
+        }
         _messages.value = emptyList()
         startLiveSync()
     }
@@ -126,35 +178,35 @@ object ChatManager {
         }
     }
 
+    fun normalizedTopic(roomId: String): String {
+        val clean = roomId.trim().lowercase()
+            .replace("-", "_")
+            .replace(" ", "_")
+        return "aura_music_$clean"
+    }
+
     private fun startLiveSync() {
         syncJob?.cancel()
         syncJob = scope.launch(Dispatchers.IO) {
+            // Immediate sync upon entering
+            pollRoomUpdates()
             while (isActive) {
+                delay(1500)
                 pollRoomUpdates()
-                delay(2500)
             }
         }
     }
 
     private suspend fun broadcastMessage(message: ChatMessage) = withContext(Dispatchers.IO) {
         val roomId = _currentRoom.value.id
+        val topic = normalizedTopic(roomId)
         val jsonPayload = gson.toJson(message)
 
-        // 1. Broadcast to Firebase Realtime Database
-        try {
-            val reqBody = jsonPayload.toRequestBody("application/json".toMediaType())
-            val fbReq = Request.Builder()
-                .url("$firebaseDatabaseUrl/rooms/$roomId/messages/${message.id}.json")
-                .put(reqBody)
-                .build()
-            httpClient.newCall(fbReq).execute().close()
-        } catch (_: Exception) {}
-
-        // 2. Broadcast to instantaneous real-time pubsub relay
+        // Broadcast to instantaneous real-time pubsub relay
         try {
             val relayBody = jsonPayload.toRequestBody("application/json".toMediaType())
             val relayReq = Request.Builder()
-                .url("https://ntfy.sh/aura_music_${roomId}")
+                .url("https://ntfy.sh/$topic")
                 .post(relayBody)
                 .build()
             httpClient.newCall(relayReq).execute().close()
@@ -164,10 +216,11 @@ object ChatManager {
     private suspend fun pollRoomUpdates() = withContext(Dispatchers.IO) {
         val roomId = _currentRoom.value.id
         val profile = _currentProfile.value ?: return@withContext
+        val topic = normalizedTopic(roomId)
 
-        // Poll from live relay
+        // Poll from live relay with 12h history window
         try {
-            val url = "https://ntfy.sh/aura_music_${roomId}/json?poll=1&since=1m"
+            val url = "https://ntfy.sh/$topic/json?poll=1&since=12h"
             val request = Request.Builder().url(url).build()
 
             httpClient.newCall(request).execute().use { response ->
@@ -182,8 +235,14 @@ object ChatManager {
                             val eventObj = gson.fromJson(line, JsonObject::class.java)
                             val messageContent = eventObj.get("message")?.asString ?: continue
                             val msg = gson.fromJson(messageContent, ChatMessage::class.java)
-                            if (msg != null && msg.senderId != profile.userId) {
-                                fetched.add(msg.copy(isFromMe = false))
+                            if (msg != null) {
+                                val correctedTimestamp = if (msg.timestamp in 1..100_000_000_000L) {
+                                    msg.timestamp * 1000L
+                                } else {
+                                    msg.timestamp
+                                }
+                                val isMe = (msg.senderId == profile.userId)
+                                fetched.add(msg.copy(timestamp = correctedTimestamp, isFromMe = isMe))
                             }
                         } catch (_: Exception) {}
                     }
@@ -192,7 +251,16 @@ object ChatManager {
                         withContext(Dispatchers.Main) {
                             val currentMap = _messages.value.associateBy { it.id }.toMutableMap()
                             for (f in fetched) {
-                                currentMap[f.id] = f
+                                val existing = currentMap[f.id]
+                                if (existing != null) {
+                                    val mergedReactions = existing.reactions.toMutableMap()
+                                    for ((emoji, count) in f.reactions) {
+                                        mergedReactions[emoji] = maxOf(mergedReactions[emoji] ?: 0, count)
+                                    }
+                                    currentMap[f.id] = f.copy(reactions = mergedReactions)
+                                } else {
+                                    currentMap[f.id] = f
+                                }
                             }
                             _messages.value = currentMap.values.sortedBy { it.timestamp }
                         }

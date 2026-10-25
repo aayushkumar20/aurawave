@@ -22,8 +22,13 @@ object YouTubeMusicEngine {
     private val gson = Gson()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
+    private val userAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+
     private val invidiousEndpoints = listOf(
-        "https://yt.chocolatemoo53.com"
+        "https://inv.nadeko.net",
+        "https://yt.chocolatemoo53.com",
+        "https://invidious.tiekoetter.com",
+        "https://invidious.nerdvpn.de"
     )
 
     /**
@@ -38,7 +43,7 @@ object YouTubeMusicEngine {
             var response: okhttp3.Response? = null
             try {
                 val url = "$baseUrl/api/v1/trending?type=music"
-                val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+                val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
                 response = client.newCall(request).execute()
                 if (response.isSuccessful) {
                     val body = response.body?.string()
@@ -66,7 +71,7 @@ object YouTubeMusicEngine {
         try {
             val encoded = URLEncoder.encode(query, "UTF-8")
             val url = "https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=$encoded"
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+            val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
             response = client.newCall(request).execute()
             if (response.isSuccessful) {
                 val body = response.body?.string()
@@ -105,7 +110,7 @@ object YouTubeMusicEngine {
             var response: okhttp3.Response? = null
             try {
                 val url = "$baseUrl/api/v1/search?q=$encoded&type=video"
-                val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+                val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
                 response = client.newCall(request).execute()
                 if (response.isSuccessful) {
                     val body = response.body?.string()
@@ -144,7 +149,7 @@ object YouTubeMusicEngine {
 
             val request = Request.Builder()
                 .url("https://www.youtube.com/youtubei/v1/search")
-                .header("User-Agent", "Mozilla/5.0")
+                .header("User-Agent", userAgent)
                 .post(payload.toString().toRequestBody(jsonMediaType))
                 .build()
 
@@ -254,7 +259,7 @@ object YouTubeMusicEngine {
             var response: okhttp3.Response? = null
             try {
                 val url = "$baseUrl/api/v1/videos/${song.id}"
-                val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+                val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
                 response = client.newCall(request).execute()
                 if (response.isSuccessful) {
                     val body = response.body?.string()
@@ -295,7 +300,7 @@ object YouTubeMusicEngine {
             var response: okhttp3.Response? = null
             try {
                 val url = "$baseUrl/streams/${song.id}"
-                val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+                val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
                 response = client.newCall(request).execute()
                 if (response.isSuccessful) {
                     val body = response.body?.string()
