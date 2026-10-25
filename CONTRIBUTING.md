@@ -1,6 +1,6 @@
 # Contributing to AuraWave 🌊
 
-Thank you for your interest in contributing to **AuraWave**! To keep AuraWave fast, private, secure, and 100% ad-free, please review our core development rules and contribution workflow.
+Development requirements, architecture constraints, and contribution workflow for the AuraWave project.
 
 ---
 

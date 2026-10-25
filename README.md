@@ -1,268 +1,352 @@
-# 🌊 AuraWave: Ad-Free Music Streaming & Real-Time Collaborative Lounges
+# AuraWave
 
 [![Platform](https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20Web-blue.svg)](https://github.com/aayushkumar20/aurawave)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Ads](https://img.shields.io/badge/Ads-Zero%20(100%25%20Ad--Blocked)-brightgreen.svg)](#)
+[![Ads](https://img.shields.io/badge/Ads-Zero%20(Audio%20%26%20Video)-brightgreen.svg)](#)
 [![Google Sign-In](https://img.shields.io/badge/Google%20Sign--In-None%20Required-success.svg)](#)
-[![Sync](https://img.shields.io/badge/Real--Time%20Sync-Android%20%E2%87%84%20iOS%20%E2%87%84%20Web-purple.svg)](#)
+[![Sync](https://img.shields.io/badge/Sync-Android%20%E2%87%84%20iOS%20%E2%87%84%20Web-purple.svg)](#)
 
-**AuraWave** is a high-performance, cross-platform music streaming and real-time collaborative party listening player built natively in **Kotlin + Jetpack Compose** for Android, **Swift + SwiftUI** for iOS, and a progressive **Web Player**. It streams high-fidelity audio directly from YouTube Music with **100% ad-blocking (zero audio or video ads)**, requiring **no Google sign-in**, accounts, or tracking.
-
----
-
-## 🌟 Core Benefits & Why Use This?
-
-| Benefit | How It Helps You |
-| :--- | :--- |
-| **🚫 Zero Google Sign-In** | No Google account, email, or credentials required. You are never tracked, profiled, or locked into proprietary ecosystem accounts. |
-| **🛡️ 100% Ad-Free (Zero Ads)** | Completely blocks all pre-roll video ads, mid-roll audio ads, popups, and sponsored banners. Uninterrupted music streaming from start to finish. |
-| **🔒 Safe, Private & Sandboxed** | Operates strictly as a client. **No open ports, no listening background servers, and no dangerous permissions**. Runs securely inside native mobile OS sandboxes. |
-| **🎧 Full Background & Lock-Screen Playback** | Keep listening with full notification drawer and lock-screen media controls (play, pause, skip, seek, artwork) on both Android and iOS while your screen is off or you are using other apps. |
-| **👥 Collaborative Group Playlists & Live Chat** | Create or join live music lounges via a simple code (e.g., `AURA-1024`). Any group member can search and add songs in real time to build a shared queue with synced playback. |
-| **⚡ Fast Live Autocomplete Search** | Instant query suggestions and track search straight from YouTube Music's high-speed catalog without lag. |
-| **💾 Completely Free & Open Source** | Zero subscription fees, zero premium paywalls, zero in-app purchases. MIT licensed for full transparency. |
+AuraWave is an open-source, ad-free music streaming client and collaborative party-listening player. The system is implemented in native **Kotlin + Jetpack Compose** for Android, **Swift + SwiftUI** for iOS, and standard **JavaScript** for web browsers. It streams audio directly from YouTube Music infrastructure without requiring Google accounts, sign-ins, or telemetry.
 
 ---
 
-## ⚙️ How It Works (Under the Hood)
+## Technical Specifications
 
-### 1. Direct Audio Bitstream Extraction (Ad-Bypass Architecture)
-Traditional YouTube clients load video advertisements, tracking telemetry, and heavy UI scripts before playing media. 
-- **Direct Querying**: The player queries YouTube's production **InnerTube API** and privacy-preserving extraction engines directly.
-- **Pure Audio Bitstream**: It extracts the raw high-bitrate audio streams (such as **Opus 160kbps** or **AAC 128kbps**) and streams them directly into native platform audio decoders:
-  - **Android**: Uses Google's **Jetpack Media3 / ExoPlayer** running within an independent foreground `MediaSessionService`.
-  - **iOS**: Uses Apple's **AVFoundation (`AVPlayer`)** registered with `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`.
-  - **Web**: Uses an embedded background playback coordinator with custom visualizer controls.
-- **Result**: Because ad servers and video tracking URLs are completely bypassed, you get instant playback with zero commercial interruptions.
-
-### 2. Real-Time Cross-Platform Synchronization
-Cross-platform synchronization (between Android, iOS, and Web) operates via a lightweight, zero-latency streaming pipeline:
-- **Zero-Friction Rooms**: Rooms are identified by human-readable names or codes (e.g. `room_global` or `AURA-4921`).
-- **Persistent Server-Sent Events (SSE)**: Devices connect to an active real-time pub/sub stream with an open HTTP keep-alive connection (`readTimeout = 0`).
-- **Standardized Sync Packets (`GroupSyncPacket`)**:
-  - `CHAT_MSG`: Real-time text messages and emoji reactions.
-  - `PLAYLIST_ADD`: Broadcasts when any user adds a track to the collaborative playlist, updating the queue on all room members' screens immediately.
-  - `SYNC_PLAYBACK`: Synchronizes play/pause state and playback position (timestamps) across devices.
-- **Lenient Cross-Platform Deserialization**: Swift and Kotlin handle timestamps and numbers resiliently through custom adapters, ensuring fractional and whole-millisecond epoch timestamps communicate without serialization crashes.
+| Component | Android | iOS | Web |
+| :--- | :--- | :--- | :--- |
+| **Language** | Kotlin 1.9+ | Swift 5.9+ | Vanilla JavaScript (ES2022) |
+| **UI Framework** | Jetpack Compose (Material 3) | SwiftUI | Semantic HTML5 + Custom CSS |
+| **Audio Engine** | AndroidX Media3 (ExoPlayer) | AVFoundation (`AVPlayer`) | HTML5 Audio / YouTube IFrame Engine |
+| **Background Service** | `MediaSessionService` (`FOREGROUND_SERVICE_MEDIA_PLAYBACK`) | `AVAudioSession` (`.playback` category) | Web Audio Context |
+| **Lock-Screen Controls** | `MediaSession` + System Notification Shade | `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter` | Media Session API (`navigator.mediaSession`) |
+| **Real-Time Sync** | OkHttp Persistent SSE (`application/x-ndjson`) | URLSession Async Bytes Streaming (`URLSession.shared.bytes`) | EventSource / Fetch Streams |
+| **JSON Serialization** | Gson + Lenient `Long`/`Double` TypeAdapters | Swift `Codable` (`Int64` timestamps) | Native `JSON.parse` / `JSON.stringify` |
+| **Network Protocol** | Outbound HTTPS TLS 1.3 (Port 443) | Outbound HTTPS TLS 1.3 (Port 443) | Outbound HTTPS TLS 1.3 (Port 443) |
 
 ---
 
-## 📊 System Architecture & Flowcharts
+## Deep Technical Logic & Engineering Mechanics
 
-### 1. End-to-End Audio Pipeline & Ad-Bypass Flowchart
-How AuraWave streams high-fidelity music directly without commercial interruptions or sign-in requirements:
+### 1. YouTube InnerTube API & Bitstream Extraction Mechanics
+Standard YouTube web clients and official mobile applications load multi-megabyte JavaScript bundles, execute telemetry trackers (`s.youtube.com`), and query advertising brokers (`doubleclick.net`) prior to media playback. AuraWave bypasses this entire pipeline by interacting directly with YouTube's backend endpoints.
 
+```
++-----------------------------------------------------------------------------------------+
+|                                    SEARCH PIPELINE                                      |
+|                                                                                         |
+|  User Query ----> POST https://www.youtube.com/youtubei/v1/search                       |
+|                   Payload: { context: { client: { clientName: "WEB_REMIX", ... } } }    |
+|                                                                                         |
+|  Response   <---- InnerTube JSON (Traverses compactVideoRenderer nodes)                 |
+|                   Extracts: videoId, title, artist name, duration, thumbnail URLs       |
++-----------------------------------------------------------------------------------------+
+```
+
+```
++-----------------------------------------------------------------------------------------+
+|                                  PLAYBACK RESOLUTION                                    |
+|                                                                                         |
+|  Track ID   ----> Query Piped / Invidious Stream Manifest Endpoints                     |
+|                                                                                         |
+|  Filter     ----> Scans audioStreams[] array:                                           |
+|                   1. mimeType: "audio/webm; codecs=\"opus\"" (~160 kbps, 48 kHz)       |
+|                   2. mimeType: "audio/mp4; codecs=\"mp4a.40.2\"" (~128 kbps, 44.1 kHz)  |
+|                                                                                         |
+|  Stream URL ----> Direct Google Video CDN URL: https://*.googlevideo.com/videoplayback  |
+|                   Directly streamed into native audio decoder (ExoPlayer / AVPlayer)    |
++-----------------------------------------------------------------------------------------+
+```
+
+#### Why Audio Ads Do Not Play
+In official clients, advertisements are not embedded inside the song's audio file. Instead, the YouTube player app receives an ad playback manifest containing separate ad video IDs (`adformat=...`) and is instructed to play the ad stream before loading the music stream. 
+
+Because AuraWave never executes the YouTube player script, it queries exclusively for the target song's `videoId`. The Google Video CDN receives an HTTP GET request for the specific audio stream chunks and returns raw Opus/AAC audio packets without injecting commercial interruptions.
+
+---
+
+### 2. Zero-Port Real-Time Synchronization Protocol
+Most collaborative music applications require running local TCP sockets, opening firewall ports, or maintaining heavy bi-directional WebSocket infrastructure. AuraWave uses unidirectional Server-Sent Events (SSE) over persistent HTTPS connections on standard port 443.
+
+```
++----------------+            POST /aura_music_<room_code>            +-------------------+
+|  Device A      | -------------------------------------------------> |                   |
+|  (Adds Track)  |           JSON: { type: "PLAYLIST_ADD", ... }      |  Relay Server     |
++----------------+                                                    |  (ntfy.sh / RTDB) |
+                                                                      |                   |
++----------------+       Persistent SSE Stream (/json?since=4h)       |  Publishes packet |
+|  Device B      | <================================================= |  to subscribed    |
+|  (Receives)    |        Chunked Transfer: application/x-ndjson      |  channel topic    |
++----------------+                                                    +-------------------+
+```
+
+#### How the Stream Connection Works
+1. **Connection Setup**: When a user joins a room (e.g., `AURA-1024`), the client computes a normalized topic string:
+   $$\text{topic} = \text{"aura\_music\_"} + \text{roomId.trim().toLowerCase().replace("-", "\_")}$$
+2. **Persistent Inbound Stream**:
+   - **Android (`ChatManager.kt`)**: Uses an OkHttpClient instance configured with `readTimeout(0, TimeUnit.MILLISECONDS)`. It requests `https://ntfy.sh/<topic>/json?since=4h` and reads chunks in a continuous loop via `source.readUtf8Line()`.
+   - **iOS (`ChatService.swift`)**: Uses Swift's asynchronous byte sequence:
+     ```swift
+     let (bytes, response) = try await URLSession.shared.bytes(for: request)
+     for try await line in bytes.lines { ... }
+     ```
+3. **Outbound Broadcasting**: When a user posts a message or adds a song, the client issues an HTTP POST containing a `GroupSyncPacket` to `https://ntfy.sh/<topic>`. The relay server immediately multiplexes the payload to all active client connections listening on that topic.
+4. **Security Profile**: The client only initiates outbound TCP connections to port 443. It never binds to local interfaces (`0.0.0.0` or `127.0.0.1`), eliminating listening socket attack surfaces.
+
+---
+
+### 3. Cross-Platform Serialization Mechanics
+A common issue in cross-platform systems is serialization mismatch between dynamically-typed or IEEE 754 floating-point numbers and strongly-typed 64-bit integer fields.
+
+#### The Problem
+- Swift timestamps generated via `Date().timeIntervalSince1970 * 1000.0` produce floating-point values with decimal sub-millisecond precision (e.g., `1792919598970.263`).
+- Kotlin's `ChatMessage.timestamp` and `Song.durationMs` are strictly typed as 64-bit signed integers (`Long`).
+- Default Gson deserialization attempts `in.nextLong()`, which throws a `com.google.gson.JsonSyntaxException: java.lang.NumberFormatException: Expected a long but was 1792919598970.263`, silently dropping the packet.
+
+#### The Solution
+1. **Swift Encoder Fix**: Swift encodes explicit 64-bit integers:
+   ```swift
+   try container.encode(Int64(timestamp.timeIntervalSince1970 * 1000.0), forKey: .timestamp)
+   ```
+2. **Lenient Gson Deserializer**: Android registers fallback number adapters in `ChatManager.kt`:
+   ```kotlin
+   val gson = GsonBuilder()
+       .registerTypeAdapter(Long::class.java, JsonDeserializer { json, _, _ ->
+           try {
+               if (json.isJsonPrimitive && json.asJsonPrimitive.isNumber) {
+                   json.asDouble.toLong()
+               } else {
+                   json.asString.toDoubleOrNull()?.toLong() ?: 0L
+               }
+           } catch (_: Exception) { 0L }
+       })
+       .create()
+   ```
+This guarantees that regardless of whether a timestamp arrives as an integer, float, double, or numeric string, it parses cleanly without throwing unhandled exceptions.
+
+---
+
+### 4. Background Audio & Lock-Screen Lifecycle Management
+
+```
++-----------------------------------------------------------------------------------------+
+|                                    ANDROID LIFECYCLE                                    |
+|                                                                                         |
+|  PlaybackService extends MediaSessionService                                            |
+|  ├── Declared foregroundServiceType="mediaPlayback" in AndroidManifest.xml              |
+|  ├── Holds PARTIAL_WAKE_LOCK to keep CPU audio pipeline active during screen sleep     |
+|  ├── ExoPlayer outputs PCM audio to Android AudioFlinger HAL                            |
+|  └── MediaSession exposes MediaMetadataCompat to System Notification Shade & Lockscreen |
++-----------------------------------------------------------------------------------------+
+```
+
+```
++-----------------------------------------------------------------------------------------+
+|                                      IOS LIFECYCLE                                      |
+|                                                                                         |
+|  AudioPlayerService                                                                     |
+|  ├── AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)            |
+|  ├── Info.plist specifies UIBackgroundModes = ["audio"]                                 |
+|  ├── MPNowPlayingInfoCenter updates title, artist, duration, elapsed time, artwork      |
+|  └── MPRemoteCommandCenter binds playCommand, pauseCommand, changePlaybackPositionCommand|
++-----------------------------------------------------------------------------------------+
+```
+
+When the user turns off the screen:
+- The OS puts the UI thread to sleep.
+- The background audio service retains execution priority.
+- Hardware media decoder buffers remain filled.
+- The user controls playback directly from the lock-screen transport controls.
+
+---
+
+## System Architecture Flowcharts
+
+### 1. End-to-End Audio Pipeline
 ```mermaid
 flowchart TD
-    subgraph Client["📱 AuraWave Client (Android / iOS / Web)"]
-        UserSearch["User Types Search / Selects Track"]
-        Engine["YouTubeMusicEngine (Native Client)"]
-        AudioDecoder["Native Decoders (Media3 ExoPlayer / AVPlayer)"]
-        LockScreen["Lock Screen & Notification Controls"]
+    subgraph Client["AuraWave Client"]
+        SearchInput["User Search Query"]
+        Engine["YouTubeMusicEngine"]
+        Decoder["Audio Decoder (Media3 / AVPlayer)"]
+        Output["Lock Screen & Background Audio Output"]
     end
 
-    subgraph YouTube["🌐 YouTube & Content Delivery Networks"]
-        InnerTube["YouTube InnerTube API / Public Endpoints"]
-        AdServer["❌ Ad Tracking & Video Ad Networks"]
-        AudioStream["✅ Direct Audio Streams (Opus 160kbps / AAC)"]
+    subgraph Remote["YouTube / Content Delivery Network"]
+        API["InnerTube API (v1/search)"]
+        StreamManifest["Stream Resolution Engine"]
+        CDN["Google Video CDN (*.googlevideo.com)"]
+        AdNet["Ad Servers (Bypassed)"]
     end
 
-    UserSearch -->|Search Query| Engine
-    Engine -->|1. Direct Metadata Lookup| InnerTube
-    InnerTube -->|2. Stream Manifest| Engine
-    Engine -.->|Bypasses & Drops Ads| AdServer
-    Engine -->|3. Clean Audio Stream URL| AudioDecoder
-    AudioStream -->|High-Fidelity Audio Bitstream| AudioDecoder
-    AudioDecoder -->|4. Continuous Background Playback| LockScreen
+    SearchInput -->|Query String| Engine
+    Engine -->|HTTP POST| API
+    API -->|JSON Metadata| Engine
+    Engine -->|Track ID Lookup| StreamManifest
+    StreamManifest -.->|Bypasses Ad Scripts| AdNet
+    StreamManifest -->|Direct Audio URL| Engine
+    Engine -->|Passes Stream URL| Decoder
+    CDN -->|Raw Opus/AAC Chunks| Decoder
+    Decoder -->|Continuous PCM Playback| Output
 ```
 
 ---
 
-### 2. Cross-Platform Collaborative Party & Playlist Sync Flowchart
-How multiple users across Android, iOS, and Web add songs, chat, and keep playback in sync in real time:
-
+### 2. Real-Time Room & Playlist Sync
 ```mermaid
 flowchart LR
-    subgraph iOSDevice["🍎 iOS Device (SwiftUI)"]
-        UseriOS["User A (iPhone)"]
-        ChatServiceiOS["ChatService & Group Playlist"]
+    subgraph Device1["Device A (e.g., iPhone)"]
+        UserA["User Action (Add Track / Message)"]
+        ServiceA["ChatService"]
     end
 
-    subgraph Relay["⚡ Real-Time Streaming Channel (SSE)"]
+    subgraph Relay["Relay Channel (Port 443)"]
         Topic["Topic: aura_music_<room_code>"]
-        StreamServer["Real-Time SSE Event Stream"]
+        Stream["Persistent SSE Stream"]
     end
 
-    subgraph AndroidDevice["🤖 Android Device (Compose)"]
-        ChatManagerAnd["ChatManager & Group Playlist"]
-        UserAndroid["User B (Android Phone)"]
+    subgraph Device2["Device B (e.g., Android)"]
+        ManagerB["ChatManager"]
+        UserB["Local Queue Updated / Auto Playback"]
     end
 
-    subgraph WebDevice["💻 Web Client (Browser)"]
-        WebSync["Web Player & Chat Room"]
-    end
-
-    UseriOS -->|"+ Add Song" / Message| ChatServiceiOS
-    ChatServiceiOS -->|"POST GroupSyncPacket (PLAYLIST_ADD / CHAT_MSG)"| Topic
-    Topic --> StreamServer
-    StreamServer -->|"Instant Push Stream (NDJSON / SSE)"| ChatManagerAnd
-    StreamServer -->|"Instant Push Stream (NDJSON / SSE)"| WebSync
-    ChatManagerAnd -->|"Auto-Appends Track to Shared Queue"| UserAndroid
-    UserAndroid -.->|"1-Tap Synced Playback"| ChatServiceiOS
+    UserA -->|Queue Song| ServiceA
+    ServiceA -->|HTTP POST JSON Payload| Topic
+    Topic --> Stream
+    Stream -->|Push Chunk: application/x-ndjson| ManagerB
+    ManagerB -->|Deserializes & Appends to StateFlow| UserB
 ```
 
 ---
 
-### 3. Security, Privacy & Zero-Listening-Port Flowchart
-How the application guarantees device safety and user privacy inside mobile OS sandboxes:
-
+### 3. Security & Sandboxing Model
 ```mermaid
 flowchart TD
-    subgraph Sandbox["🛡️ Mobile OS Sandbox (Android / iOS)"]
-        App["AuraWave Application"]
+    subgraph Sandbox["Mobile OS Security Sandbox"]
+        App["AuraWave Client"]
         Perms["Standard Media Permissions\n(INTERNET, WAKE_LOCK, MEDIA_PLAYBACK)"]
-        NoPorts["❌ No Listening Server Ports\n❌ No ServerSocket / bind()\n❌ No Local Web Daemon"]
+        NoSockets["No Listening Sockets\nNo ServerSocket\nNo Inbound Ports"]
     end
 
-    subgraph Network["🔒 Outbound Network Layer"]
-        OutboundTLS["Pure Outbound TLS / HTTPS (Port 443)"]
-        CDNs["YouTube Streams & SSE Pub/Sub"]
+    subgraph External["External Network"]
+        Outbound["Outbound TLS 1.3 Requests (Port 443)"]
+        Endpoints["YouTube CDN & SSE Stream Relays"]
     end
 
     App --> Perms
-    App --- NoPorts
-    App -->|Secure Encrypted Outbound Requests| OutboundTLS
-    OutboundTLS --> CDNs
+    App --- NoSockets
+    App -->|Encrypted HTTPS GET/POST| Outbound
+    Outbound --> Endpoints
 ```
 
 ---
 
-## 📂 Repository & Project Structure
+## Directory Structure
 
 ```
 aurawave/
+├── AuraMusic-latest.apk        # Compiled Android debug APK
+├── CONTRIBUTING.md             # Contribution rules and guidelines
+├── CODE_OF_CONDUCT.md          # Contributor Covenant v2.1 code of conduct
+├── LICENSE                     # MIT License
+├── README.md                   # System documentation
 │
-├── AuraMusic-latest.apk       # Pre-compiled latest Android standalone APK (Ready to install)
-├── LICENSE                    # MIT Open Source License
-├── README.md                  # Comprehensive Documentation & Architecture Guide
-│
-├── android/                   # Native Android Project (Kotlin + Jetpack Compose)
+├── android/                    # Android implementation (Kotlin, Jetpack Compose, Media3)
 │   ├── app/
-│   │   ├── build.gradle.kts   # Android dependencies (Media3, Compose, Coil, Gson, OkHttp)
+│   │   ├── build.gradle.kts    # Dependencies and build configuration
 │   │   └── src/main/
-│   │       ├── AndroidManifest.xml # Standard permissions (Internet, Media Playback Foreground Service)
+│   │       ├── AndroidManifest.xml
 │   │       └── java/com/auramusic/app/
-│   │           ├── MainActivity.kt               # Main entry point & Jetpack Compose navigation
-│   │           ├── AuraApplication.kt           # App lifecycle container
+│   │           ├── MainActivity.kt               # Root Activity & navigation host
+│   │           ├── AuraApplication.kt           # Application base class
 │   │           ├── data/
-│   │           │   ├── models/Models.kt          # Song, ChatMessage, GroupSyncPacket data classes
-│   │           │   ├── api/YouTubeMusicEngine.kt # Live search, suggestions & trending track parser
-│   │           │   └── repository/ChatManager.kt # Real-time streaming, rooms & collaborative playlist
+│   │           │   ├── models/Models.kt          # Data models (Song, ChatMessage, GroupSyncPacket)
+│   │           │   ├── api/YouTubeMusicEngine.kt # Search parser & suggestion engine
+│   │           │   └── repository/ChatManager.kt # SSE streaming & collaborative queue manager
 │   │           ├── player/
-│   │           │   ├── PlaybackManager.kt        # Audio state machine, queues (Play Next/Last)
-│   │           │   ├── PlaybackService.kt        # Background MediaSessionService for lock-screen
-│   │           │   └── YouTubeAudioEngine.kt     # Direct stream URL extractor
+│   │           │   ├── PlaybackManager.kt        # Playback controller (Play Next / Play Last)
+│   │           │   ├── PlaybackService.kt        # Foreground MediaSessionService
+│   │           │   └── YouTubeAudioEngine.kt     # Stream extractor
 │   │           └── ui/
-│   │               ├── screens/
-│   │               │   ├── HomeScreen.kt         # Trending charts & quick recommendations
-│   │               │   ├── SearchScreen.kt       # Live autocomplete & filter chips
-│   │               │   ├── LibraryScreen.kt      # Offline-first custom playlists & favorites
-│   │               │   ├── ChatScreen.kt         # Real-time room chat, in-group song search & queue
-│   │               │   └── NowPlayingSheet.kt    # Full-screen player with lyrics & visualizer
-│   │               └── theme/                    # Futuristic dark-mode design system
+│   │               ├── screens/                  # Compose screens (Home, Search, Library, Chat)
+│   │               └── theme/                    # Color palette and typography tokens
 │
-├── ios/                       # Native iOS Project (Swift + SwiftUI + AVFoundation)
-│   ├── AuraMusic.xcodeproj   # Xcode Project configuration
-│   ├── Package.swift          # Swift Package Manager definitions
+├── ios/                        # iOS implementation (Swift, SwiftUI, AVPlayer)
+│   ├── AuraMusic.xcodeproj    # Xcode project file
+│   ├── Package.swift           # Swift package dependencies
 │   └── AuraMusic/
-│       ├── AuraMusicApp.swift                    # iOS App Entry Point
-│       ├── Info.plist                            # Background audio mode configuration
+│       ├── AuraMusicApp.swift                    # Application entry point
+│       ├── Info.plist                            # Audio background mode declarations
 │       ├── Models/
-│       │   └── Models.swift                      # Strongly-typed Codable Song, Room & Packet structs
+│       │   └── Models.swift                      # Codable structs with Int64 timestamp handling
 │       ├── Services/
-│       │   ├── AudioPlayerService.swift          # AVPlayer + Lock-Screen NowPlaying & Remote Commands
-│       │   ├── YouTubeMusicEngine.swift          # Live InnerTube YouTube search & stream engine
-│       │   └── ChatService.swift                 # Real-time room SSE streaming & sync manager
-│       └── Views/
-│           ├── HomeView.swift                    # iOS Trending music view
-│           ├── SearchView.swift                  # Autocomplete search & discovery
-│           ├── LibraryView.swift                 # Local playlists & favorited songs
-│           ├── ChatView.swift                    # Live room chat, collaborative playlist & search drawer
-│           └── NowPlayingView.swift              # iOS Now Playing sheet & playback controls
+│       │   ├── AudioPlayerService.swift          # AVPlayer & MPRemoteCommandCenter controller
+│       │   ├── YouTubeMusicEngine.swift          # InnerTube search and stream extractor
+│       │   └── ChatService.swift                 # SSE client and room manager
+│       └── Views/                                # SwiftUI views (Home, Search, Library, Chat)
 │
-└── firebase/                  # Web Client & Cloud Configuration
-    ├── database.rules.json    # Realtime Database security rules
-    ├── firebase.json          # Hosting & deployment configuration
-    └── public/                # Full Web Player Client
-        ├── index.html         # Responsive web UI layout
-        ├── style.css          # Glassmorphism dark-mode CSS styles
-        └── app.js             # Web audio player, background YouTube engine, room chat & SSE sync
+└── firebase/                   # Web implementation
+    ├── database.rules.json     # Realtime Database rules
+    ├── firebase.json           # Hosting configuration
+    └── public/
+        ├── index.html          # Web UI markup
+        ├── style.css           # Styling rules
+        └── app.js              # Web audio playback and SSE client
 ```
 
 ---
 
-## 📱 Installation & Getting Started
+## Installation & Build Commands
 
-### 1. Android Installation
+### Android
 
-#### Option A: Install Ready APK via USB (ADB)
-If your Android phone is connected to your computer:
+#### Install Pre-Compiled APK
 ```bash
 adb install -r "AuraMusic-latest.apk"
 ```
 
-#### Option B: Direct Phone Download / Transfer
-1. Transfer [`AuraMusic-latest.apk`](file:///Users/aayushkumar/Desktop/Music%20player/AuraMusic-latest.apk) to your Android device via USB, Google Drive, WhatsApp, or local share.
-2. Tap the APK file and select **Install** (enable *"Install from unknown sources"* if prompted).
-3. Open **Aura Music** and start listening immediately without signing in!
-
-#### Option C: Build from Source
+#### Build Debug APK from Source
 ```bash
 cd android
 ./gradlew assembleDebug
 ```
-The compiled APK will be located at `android/app/build/outputs/apk/debug/app-debug.apk`.
+The output file is generated at `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ---
 
-### 2. iOS Installation
+### iOS
 
-Because Apple requires code-signing on physical iOS devices, you can install the native app on **any iPhone** using one of the following methods:
-
-#### Method A: Xcode Direct Install (Free)
-1. Open the project in Xcode:
+#### Build via Xcode
+1. Open the project:
    ```bash
    open ios/AuraMusic.xcodeproj
    ```
-2. Connect your iPhone via USB.
-3. Select your iPhone as the build target in Xcode's top bar.
-4. Under `Signing & Capabilities`, choose your free personal Apple ID Team.
-5. Press `Cmd + R` to build and run. The app will install directly onto your iPhone.
+2. Select your connected device or simulator in the scheme selector.
+3. Select your development team under **Signing & Capabilities**.
+4. Press `Cmd + B` to compile, or `Cmd + R` to deploy to device.
 
-#### Method B: Sideloading (AltStore or Sideloadly)
-1. Download [Sideloadly](https://sideloadly.io/) or [AltStore](https://altstore.io/).
-2. Build the `.ipa` or load the Xcode project file.
-3. Sideload the app using your Apple ID (valid for 7 days on free developer accounts).
+#### Validate Build via Command Line
+```bash
+xcodebuild -project ios/AuraMusic.xcodeproj -scheme AuraMusic -destination 'generic/platform=iOS' build CODE_SIGNING_ALLOWED=NO
+```
 
 ---
 
-### 3. Web Player (Any Browser)
-To run the web player locally:
+### Web Player
+Run a static server pointing to the web distribution:
 ```bash
 npx serve firebase/public
 ```
-Or open `firebase/public/index.html` in your web browser.
+Or open `firebase/public/index.html` directly in any standards-compliant browser.
 
 ---
 
-## 🔒 Security & Privacy Policy
-
-- **No Inbound Open Ports**: The application functions 100% as an outbound client. It never listens on network sockets or binds local web servers.
-- **No Dangerous Permissions**: It does not access your location, contacts, camera, photos, SMS, or phone state.
-- **No Tracking Telemetry**: Built without advertising trackers, analytics SDKs, or commercial spyware.
+## Security Model
+- **No Listening Sockets**: The software does not open local ports or run background HTTP/TCP listener daemons.
+- **Outbound Connections Only**: Communication is restricted to standard HTTPS queries on port 443.
+- **No Privileged Permissions**: The app does not request access to contacts, location, camera, microphone, SMS, or local documents.
+- **Client-Side Isolation**: Incoming network payloads are strictly parsed into static data models via Gson and Swift Codable.
 
 ---
 
-## 📄 License
-This project is open-source under the [MIT License](LICENSE).
-Feel free to contribute, fork, and enhance the experience!
+## License
+This project is released under the [MIT License](LICENSE).
