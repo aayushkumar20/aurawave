@@ -2,8 +2,11 @@ package com.auramusic.app.data.repository
 
 import com.auramusic.app.data.models.ChatMessage
 import com.auramusic.app.data.models.ChatRoom
+import com.auramusic.app.data.models.GroupPlaylistItem
+import com.auramusic.app.data.models.GroupSyncPacket
 import com.auramusic.app.data.models.RoomProfile
 import com.auramusic.app.data.models.Song
+import com.auramusic.app.player.PlaybackManager
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.CoroutineScope
@@ -25,8 +28,8 @@ import java.util.concurrent.TimeUnit
 object ChatManager {
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
         .build()
     private val gson = Gson()
     private var syncJob: Job? = null
@@ -53,6 +56,10 @@ object ChatManager {
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+
+    // Real-Time Shared Group Playlist
+    private val _groupPlaylist = MutableStateFlow<List<GroupPlaylistItem>>(emptyList())
+    val groupPlaylist: StateFlow<List<GroupPlaylistItem>> = _groupPlaylist.asStateFlow()
 
     init {
         val randomNum = (1000..9999).random()
@@ -119,6 +126,7 @@ object ChatManager {
         )
         _currentProfile.value = profile
         _currentRoom.value = room
+        _groupPlaylist.value = emptyList()
 
         // Ensure room is in available list
         if (_availableRooms.value.none { it.id == room.id }) {
@@ -129,7 +137,7 @@ object ChatManager {
             id = "sys_welcome_${System.currentTimeMillis()}",
             senderId = "system",
             senderName = "Aura Room Bot",
-            text = "🎉 Welcome $trimmedName to #${room.name}! Room ID: ${room.id}. Share songs live, chat, or invite friends with this Room ID.",
+            text = "🎉 Welcome $trimmedName to #${room.name}! Room ID: ${room.id}. Anyone in this group can add songs to the live playlist and chat in real time.",
             reactions = mapOf("✨" to 1),
             isFromMe = false
         )
@@ -140,6 +148,7 @@ object ChatManager {
 
     fun switchRoom(room: ChatRoom) {
         _currentRoom.value = room
+        _groupPlaylist.value = emptyList()
         if (_availableRooms.value.none { it.id == room.id }) {
             _availableRooms.value = listOf(room) + _availableRooms.value
         }
@@ -151,6 +160,7 @@ object ChatManager {
         syncJob?.cancel()
         _currentProfile.value = null
         _messages.value = emptyList()
+        _groupPlaylist.value = emptyList()
     }
 
     fun addReaction(messageId: String, emoji: String) {
@@ -170,12 +180,79 @@ object ChatManager {
         }
     }
 
+    // -------------------------------------------------------------
+    // Real-Time Group Collaborative Playlist
+    // -------------------------------------------------------------
+    fun addSongToGroupPlaylist(song: Song) {
+        val profile = _currentProfile.value ?: return
+
+        // 1. Add locally
+        val current = _groupPlaylist.value.toMutableList()
+        if (current.none { it.song.id == song.id }) {
+            current.add(GroupPlaylistItem(song, profile.name))
+            _groupPlaylist.value = current
+        }
+
+        // 2. Announce in room chat with song card
+        val announceMsg = ChatMessage(
+            id = "msg_queue_${System.currentTimeMillis()}",
+            senderId = profile.userId,
+            senderName = profile.name,
+            text = "🎶 Added to Group Playlist: ${song.title} - ${song.artist}",
+            timestamp = System.currentTimeMillis(),
+            sharedSong = song,
+            reactions = mapOf("🔥" to 1),
+            isFromMe = true
+        )
+        _messages.value = _messages.value + announceMsg
+
+        // 3. Broadcast real-time playlist packet
+        val packet = GroupSyncPacket(
+            type = "PLAYLIST_ADD",
+            roomId = _currentRoom.value.id,
+            senderId = profile.userId,
+            senderName = profile.name,
+            message = announceMsg,
+            song = song,
+            playlist = _groupPlaylist.value.map { it.song }
+        )
+
+        scope.launch(Dispatchers.IO) {
+            broadcastRaw(gson.toJson(packet))
+        }
+    }
+
+    fun removeSongFromGroupPlaylist(songId: String) {
+        val current = _groupPlaylist.value.toMutableList()
+        current.removeAll { it.song.id == songId }
+        _groupPlaylist.value = current
+    }
+
+    fun syncPlaybackToGroup(song: Song, isPlaying: Boolean = true, positionSec: Double = 0.0) {
+        val profile = _currentProfile.value ?: return
+        val packet = GroupSyncPacket(
+            type = "SYNC_PLAYBACK",
+            roomId = _currentRoom.value.id,
+            senderId = profile.userId,
+            senderName = profile.name,
+            song = song,
+            action = if (isPlaying) "PLAY" else "PAUSE",
+            positionSec = positionSec
+        )
+        scope.launch(Dispatchers.IO) {
+            broadcastRaw(gson.toJson(packet))
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Chat Message Broadcasting
+    // -------------------------------------------------------------
     fun sendMessage(text: String, sharedSong: Song? = null) {
         if (text.isBlank() && sharedSong == null) return
         val profile = _currentProfile.value ?: return
 
         val newMsg = ChatMessage(
-            id = "msg_${System.currentTimeMillis()}",
+            id = "msg_${System.currentTimeMillis()}_${(100..999).random()}",
             senderId = profile.userId,
             senderName = profile.name,
             text = text,
@@ -187,8 +264,26 @@ object ChatManager {
 
         _messages.value = _messages.value + newMsg
 
+        // If a song was shared in the chat, automatically add it to group playlist!
+        if (sharedSong != null) {
+            val currentList = _groupPlaylist.value.toMutableList()
+            if (currentList.none { it.song.id == sharedSong.id }) {
+                currentList.add(GroupPlaylistItem(sharedSong, profile.name))
+                _groupPlaylist.value = currentList
+            }
+        }
+
+        val packet = GroupSyncPacket(
+            type = "CHAT_MSG",
+            roomId = _currentRoom.value.id,
+            senderId = profile.userId,
+            senderName = profile.name,
+            message = newMsg,
+            song = sharedSong
+        )
+
         scope.launch(Dispatchers.IO) {
-            broadcastMessage(newMsg)
+            broadcastRaw(gson.toJson(packet))
         }
     }
 
@@ -199,24 +294,140 @@ object ChatManager {
         return "aura_music_$clean"
     }
 
+    // -------------------------------------------------------------
+    // Real-Time Persistent Streaming & Sync Engine (Zero Rate Limit)
+    // -------------------------------------------------------------
     private fun startLiveSync() {
         syncJob?.cancel()
         syncJob = scope.launch(Dispatchers.IO) {
-            // Immediate sync upon entering
-            pollRoomUpdates()
+            val streamClient = httpClient.newBuilder()
+                .readTimeout(0, TimeUnit.MILLISECONDS) // Persistent streaming connection
+                .build()
+
             while (isActive) {
+                val profile = _currentProfile.value ?: break
+                val roomId = _currentRoom.value.id
+                val topic = normalizedTopic(roomId)
+                val url = "https://ntfy.sh/$topic/json?since=4h"
+
+                try {
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("Accept", "application/x-ndjson")
+                        .build()
+
+                    streamClient.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val source = response.body?.source() ?: return@use
+                            while (!source.exhausted() && isActive) {
+                                val line = source.readUtf8Line() ?: break
+                                if (line.isNotBlank()) {
+                                    handleIncomingStreamLine(line, profile)
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                // Auto-reconnect backoff
                 delay(1500)
-                pollRoomUpdates()
             }
         }
     }
 
-    private suspend fun broadcastMessage(message: ChatMessage) = withContext(Dispatchers.IO) {
+    private suspend fun handleIncomingStreamLine(line: String, profile: RoomProfile) {
+        try {
+            val eventObj = gson.fromJson(line, JsonObject::class.java)
+            val messageContent = eventObj.get("message")?.asString ?: return
+
+            // 1. Try parsing as GroupSyncPacket
+            val packet = try {
+                gson.fromJson(messageContent, GroupSyncPacket::class.java)
+            } catch (_: Exception) { null }
+
+            if (packet != null && !packet.type.isNullOrBlank()) {
+                when (packet.type) {
+                    "CHAT_MSG" -> {
+                        packet.message?.let { rawMsg ->
+                            val isMe = (rawMsg.senderId == profile.userId)
+                            insertOrUpdateMessage(rawMsg.copy(isFromMe = isMe))
+                        }
+                        packet.song?.let { song ->
+                            addSongToLocalPlaylist(song, packet.senderName)
+                        }
+                    }
+                    "PLAYLIST_ADD" -> {
+                        packet.song?.let { song ->
+                            addSongToLocalPlaylist(song, packet.senderName)
+                        }
+                        packet.message?.let { rawMsg ->
+                            val isMe = (rawMsg.senderId == profile.userId)
+                            insertOrUpdateMessage(rawMsg.copy(isFromMe = isMe))
+                        }
+                    }
+                    "PLAYLIST_CLEAR" -> {
+                        withContext(Dispatchers.Main) {
+                            _groupPlaylist.value = emptyList()
+                        }
+                    }
+                    "SYNC_PLAYBACK" -> {
+                        if (packet.senderId != profile.userId && packet.song != null) {
+                            withContext(Dispatchers.Main) {
+                                PlaybackManager.playSong(packet.song)
+                                if (packet.positionSec > 0) {
+                                    PlaybackManager.seekTo((packet.positionSec * 1000).toLong())
+                                }
+                            }
+                        }
+                    }
+                }
+                return
+            }
+
+            // 2. Fallback parsing as direct ChatMessage
+            val msg = gson.fromJson(messageContent, ChatMessage::class.java)
+            if (msg != null && !msg.id.isNullOrBlank()) {
+                val correctedTimestamp = if (msg.timestamp in 1..100_000_000_000L) {
+                    msg.timestamp * 1000L
+                } else {
+                    msg.timestamp
+                }
+                val isMe = (msg.senderId == profile.userId)
+                insertOrUpdateMessage(msg.copy(timestamp = correctedTimestamp, isFromMe = isMe))
+
+                msg.sharedSong?.let { song ->
+                    addSongToLocalPlaylist(song, msg.senderName)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    private suspend fun addSongToLocalPlaylist(song: Song, addedBy: String) = withContext(Dispatchers.Main) {
+        val current = _groupPlaylist.value.toMutableList()
+        if (current.none { it.song.id == song.id }) {
+            current.add(GroupPlaylistItem(song, addedBy))
+            _groupPlaylist.value = current
+        }
+    }
+
+    private suspend fun insertOrUpdateMessage(msg: ChatMessage) = withContext(Dispatchers.Main) {
+        val currentMap = _messages.value.associateBy { it.id }.toMutableMap()
+        val existing = currentMap[msg.id]
+        if (existing != null) {
+            val mergedReactions = existing.reactions.toMutableMap()
+            for ((emoji, count) in msg.reactions) {
+                mergedReactions[emoji] = maxOf(mergedReactions[emoji] ?: 0, count)
+            }
+            currentMap[msg.id] = msg.copy(reactions = mergedReactions)
+        } else {
+            currentMap[msg.id] = msg
+        }
+        _messages.value = currentMap.values.sortedBy { it.timestamp }
+    }
+
+    private suspend fun broadcastRaw(jsonPayload: String) = withContext(Dispatchers.IO) {
         val roomId = _currentRoom.value.id
         val topic = normalizedTopic(roomId)
-        val jsonPayload = gson.toJson(message)
-
-        // Broadcast to instantaneous real-time pubsub relay
         try {
             val relayBody = jsonPayload.toRequestBody("application/json".toMediaType())
             val relayReq = Request.Builder()
@@ -227,60 +438,15 @@ object ChatManager {
         } catch (_: Exception) {}
     }
 
-    private suspend fun pollRoomUpdates() = withContext(Dispatchers.IO) {
-        val roomId = _currentRoom.value.id
-        val profile = _currentProfile.value ?: return@withContext
-        val topic = normalizedTopic(roomId)
-
-        // Poll from live relay with 12h history window
-        try {
-            val url = "https://ntfy.sh/$topic/json?poll=1&since=12h"
-            val request = Request.Builder().url(url).build()
-
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: return@use
-                    val lines = body.split("\n")
-                    val fetched = mutableListOf<ChatMessage>()
-
-                    for (line in lines) {
-                        if (line.isBlank()) continue
-                        try {
-                            val eventObj = gson.fromJson(line, JsonObject::class.java)
-                            val messageContent = eventObj.get("message")?.asString ?: continue
-                            val msg = gson.fromJson(messageContent, ChatMessage::class.java)
-                            if (msg != null) {
-                                val correctedTimestamp = if (msg.timestamp in 1..100_000_000_000L) {
-                                    msg.timestamp * 1000L
-                                } else {
-                                    msg.timestamp
-                                }
-                                val isMe = (msg.senderId == profile.userId)
-                                fetched.add(msg.copy(timestamp = correctedTimestamp, isFromMe = isMe))
-                            }
-                        } catch (_: Exception) {}
-                    }
-
-                    if (fetched.isNotEmpty()) {
-                        withContext(Dispatchers.Main) {
-                            val currentMap = _messages.value.associateBy { it.id }.toMutableMap()
-                            for (f in fetched) {
-                                val existing = currentMap[f.id]
-                                if (existing != null) {
-                                    val mergedReactions = existing.reactions.toMutableMap()
-                                    for ((emoji, count) in f.reactions) {
-                                        mergedReactions[emoji] = maxOf(mergedReactions[emoji] ?: 0, count)
-                                    }
-                                    currentMap[f.id] = f.copy(reactions = mergedReactions)
-                                } else {
-                                    currentMap[f.id] = f
-                                }
-                            }
-                            _messages.value = currentMap.values.sortedBy { it.timestamp }
-                        }
-                    }
-                }
-            }
-        } catch (_: Exception) {}
+    private suspend fun broadcastMessage(message: ChatMessage) = withContext(Dispatchers.IO) {
+        val packet = GroupSyncPacket(
+            type = "CHAT_MSG",
+            roomId = _currentRoom.value.id,
+            senderId = message.senderId,
+            senderName = message.senderName,
+            message = message,
+            song = message.sharedSong
+        )
+        broadcastRaw(gson.toJson(packet))
     }
 }

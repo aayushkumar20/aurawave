@@ -17,7 +17,10 @@ public final class ChatService: ObservableObject {
     @Published public var currentRoom: ChatRoom
     @Published public var messages: [ChatMessage] = []
 
-    private var syncTimer: Timer?
+    // Real-Time Shared Group Playlist
+    @Published public var groupPlaylist: [GroupPlaylistItem] = []
+
+    private var streamTask: Task<Void, Never>?
 
     private init() {
         self.availableRooms = defaultRooms
@@ -92,6 +95,7 @@ public final class ChatService: ObservableObject {
         let selected = room ?? defaultRooms[0]
         self.currentProfile = RoomProfile(name: trimmedName, dob: trimmedDob)
         self.currentRoom = selected
+        self.groupPlaylist = []
 
         if !availableRooms.contains(where: { $0.id == selected.id }) {
             availableRooms.insert(selected, at: 0)
@@ -101,7 +105,7 @@ public final class ChatService: ObservableObject {
             id: "sys_welcome_\(Int(Date().timeIntervalSince1970 * 1000))",
             senderId: "system",
             senderName: "Aura Room Bot",
-            text: "🎉 Welcome \(trimmedName) to #\(selected.name)! Room Code: \(selected.id). Chat, share music live, and react in real time.",
+            text: "🎉 Welcome \(trimmedName) to #\(selected.name)! Room Code: \(selected.id). Anyone in this group can add songs to the live playlist and chat in real time.",
             reactions: ["✨": 1],
             isFromMe: false
         )
@@ -112,6 +116,7 @@ public final class ChatService: ObservableObject {
 
     public func switchRoom(_ room: ChatRoom) {
         self.currentRoom = room
+        self.groupPlaylist = []
         if !availableRooms.contains(where: { $0.id == room.id }) {
             availableRooms.insert(room, at: 0)
         }
@@ -120,10 +125,11 @@ public final class ChatService: ObservableObject {
     }
 
     public func leaveRoom() {
-        syncTimer?.invalidate()
-        syncTimer = nil
+        streamTask?.cancel()
+        streamTask = nil
         currentProfile = nil
         messages = []
+        groupPlaylist = []
     }
 
     // -------------------------------------------------------------
@@ -136,6 +142,58 @@ public final class ChatService: ObservableObject {
         messages[idx] = msg
 
         broadcastMessage(msg)
+    }
+
+    // -------------------------------------------------------------
+    // Group Collaborative Playlist Operations
+    // -------------------------------------------------------------
+    public func addSongToGroupPlaylist(_ song: Song) {
+        guard let profile = currentProfile else { return }
+
+        // 1. Add locally if not present
+        if !groupPlaylist.contains(where: { $0.song.id == song.id }) {
+            groupPlaylist.append(GroupPlaylistItem(song: song, addedBy: profile.name))
+        }
+
+        // 2. Announce in room chat with song card
+        let announceMsg = ChatMessage(
+            id: "msg_queue_\(Int(Date().timeIntervalSince1970 * 1000))",
+            senderId: profile.userId,
+            senderName: profile.name,
+            text: "🎶 Added to Group Playlist: \(song.title) - \(song.artist)",
+            timestamp: Date(),
+            sharedSong: song,
+            reactions: ["🔥": 1],
+            isFromMe: true
+        )
+        messages.append(announceMsg)
+
+        // 3. Broadcast real-time playlist packet
+        let packet = GroupSyncPacket(
+            type: "PLAYLIST_ADD",
+            roomId: currentRoom.id,
+            senderId: profile.userId,
+            senderName: profile.name,
+            message: announceMsg,
+            song: song,
+            playlist: groupPlaylist.map { $0.song }
+        )
+
+        broadcastPacket(packet)
+    }
+
+    public func syncPlaybackToGroup(song: Song, isPlaying: Bool = true, positionSec: Double = 0.0) {
+        guard let profile = currentProfile else { return }
+        let packet = GroupSyncPacket(
+            type: "SYNC_PLAYBACK",
+            roomId: currentRoom.id,
+            senderId: profile.userId,
+            senderName: profile.name,
+            song: song,
+            action: isPlaying ? "PLAY" : "PAUSE",
+            positionSec: positionSec
+        )
+        broadcastPacket(packet)
     }
 
     public func sendMessage(text: String, sharedSong: Song? = nil) {
@@ -155,79 +213,166 @@ public final class ChatService: ObservableObject {
         )
 
         messages.append(newMsg)
-        broadcastMessage(newMsg)
+
+        // If song is shared in chat, automatically append to group playlist
+        if let song = sharedSong {
+            if !groupPlaylist.contains(where: { $0.song.id == song.id }) {
+                groupPlaylist.append(GroupPlaylistItem(song: song, addedBy: profile.name))
+            }
+        }
+
+        let packet = GroupSyncPacket(
+            type: "CHAT_MSG",
+            roomId: currentRoom.id,
+            senderId: profile.userId,
+            senderName: profile.name,
+            message: newMsg,
+            song: sharedSong
+        )
+
+        broadcastPacket(packet)
     }
 
+    // -------------------------------------------------------------
+    // Real-Time Streaming SSE Receiver (Zero Rate Limit & Instant Push)
+    // -------------------------------------------------------------
     private func startLiveSync() {
-        syncTimer?.invalidate()
-        // Immediate fetch upon joining
-        pollRoomUpdates()
-        // Fast 1.5s real-time poll
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            self?.pollRoomUpdates()
+        streamTask?.cancel()
+        streamTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self = self, let profile = self.currentProfile else { break }
+                let topic = Self.normalizedTopic(for: self.currentRoom.id)
+                guard let streamUrl = URL(string: "https://ntfy.sh/\(topic)/json?since=4h") else { break }
+
+                do {
+                    var request = URLRequest(url: streamUrl)
+                    request.timeoutInterval = 3600 // Keep alive
+                    request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+
+                    if #available(iOS 15.0, *) {
+                        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                            try await Task.sleep(nanoseconds: 2_000_000_000)
+                            continue
+                        }
+
+                        for try await line in bytes.lines {
+                            guard !Task.isCancelled else { break }
+                            if !line.isEmpty {
+                                await self.handleIncomingLine(line, profile: profile)
+                            }
+                        }
+                    } else {
+                        try await Task.sleep(nanoseconds: 2_000_000_000)
+                    }
+                } catch {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                }
+            }
         }
     }
 
-    private func broadcastMessage(_ message: ChatMessage) {
-        let topic = Self.normalizedTopic(for: currentRoom.id)
-        guard let payloadData = try? JSONEncoder().encode(message) else { return }
+    @MainActor
+    private func handleIncomingLine(_ line: String, profile: RoomProfile) {
+        guard let lineData = line.data(using: .utf8),
+              let eventJson = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+              let msgString = eventJson["message"] as? String,
+              let msgData = msgString.data(using: .utf8) else { return }
 
-        // Fast realtime pubsub relay
+        // 1. Try decoding GroupSyncPacket
+        if let packet = try? JSONDecoder().decode(GroupSyncPacket.self, from: msgData) {
+            switch packet.type {
+            case "CHAT_MSG":
+                if let rawMsg = packet.message {
+                    var copy = rawMsg
+                    copy.isFromMe = (rawMsg.senderId == profile.userId)
+                    insertOrUpdateMessage(copy)
+                }
+                if let song = packet.song {
+                    addToLocalPlaylist(song, addedBy: packet.senderName)
+                }
+            case "PLAYLIST_ADD":
+                if let song = packet.song {
+                    addToLocalPlaylist(song, addedBy: packet.senderName)
+                }
+                if let rawMsg = packet.message {
+                    var copy = rawMsg
+                    copy.isFromMe = (rawMsg.senderId == profile.userId)
+                    insertOrUpdateMessage(copy)
+                }
+            case "SYNC_PLAYBACK":
+                if packet.senderId != profile.userId, let song = packet.song {
+                    AudioPlayerService.shared.playSong(song)
+                    if let sec = packet.positionSec, sec > 0 {
+                        AudioPlayerService.shared.seek(to: sec)
+                    }
+                }
+            default:
+                break
+            }
+            return
+        }
+
+        // 2. Fallback decoding direct ChatMessage
+        if let parsed = try? JSONDecoder().decode(ChatMessage.self, from: msgData) {
+            var copy = parsed
+            copy.isFromMe = (parsed.senderId == profile.userId)
+            insertOrUpdateMessage(copy)
+
+            if let song = parsed.sharedSong {
+                addToLocalPlaylist(song, addedBy: parsed.senderName)
+            }
+        }
+    }
+
+    @MainActor
+    private func addToLocalPlaylist(_ song: Song, addedBy: String) {
+        if !groupPlaylist.contains(where: { $0.song.id == song.id }) {
+            groupPlaylist.append(GroupPlaylistItem(song: song, addedBy: addedBy))
+        }
+    }
+
+    @MainActor
+    private func insertOrUpdateMessage(_ msg: ChatMessage) {
+        var map = Dictionary(uniqueKeysWithValues: self.messages.map { ($0.id, $0) })
+        if let existing = map[msg.id] {
+            var merged = existing.reactions
+            for (emoji, count) in msg.reactions {
+                merged[emoji] = max(merged[emoji] ?? 0, count)
+            }
+            var updated = msg
+            updated.reactions = merged
+            map[msg.id] = updated
+        } else {
+            map[msg.id] = msg
+        }
+        self.messages = map.values.sorted(by: { $0.timestamp < $1.timestamp })
+    }
+
+    private func broadcastPacket(_ packet: GroupSyncPacket) {
+        guard let payloadData = try? JSONEncoder().encode(packet) else { return }
+        broadcastRaw(payloadData)
+    }
+
+    private func broadcastMessage(_ message: ChatMessage) {
+        let packet = GroupSyncPacket(
+            type: "CHAT_MSG",
+            roomId: currentRoom.id,
+            senderId: message.senderId,
+            senderName: message.senderName,
+            message: message,
+            song: message.sharedSong
+        )
+        broadcastPacket(packet)
+    }
+
+    private func broadcastRaw(_ data: Data) {
+        let topic = Self.normalizedTopic(for: currentRoom.id)
         guard let relayUrl = URL(string: "https://ntfy.sh/\(topic)") else { return }
         var req = URLRequest(url: relayUrl)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = payloadData
+        req.httpBody = data
         URLSession.shared.dataTask(with: req).resume()
-    }
-
-    private func pollRoomUpdates() {
-        guard let profile = currentProfile else { return }
-        let topic = Self.normalizedTopic(for: currentRoom.id)
-        guard let url = URL(string: "https://ntfy.sh/\(topic)/json?poll=1&since=12h") else { return }
-
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 4.0
-
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let self = self, let data = data,
-                  let stringData = String(data: data, encoding: .utf8) else { return }
-
-            let lines = stringData.components(separatedBy: "\n")
-            var newMessages: [ChatMessage] = []
-
-            for line in lines where !line.isEmpty {
-                guard let lineData = line.data(using: .utf8),
-                      let eventJson = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                      let msgString = eventJson["message"] as? String,
-                      let msgData = msgString.data(using: .utf8),
-                      let parsed = try? JSONDecoder().decode(ChatMessage.self, from: msgData) else { continue }
-
-                var copy = parsed
-                copy.isFromMe = (parsed.senderId == profile.userId)
-                newMessages.append(copy)
-            }
-
-            if !newMessages.isEmpty {
-                DispatchQueue.main.async {
-                    var map = Dictionary(uniqueKeysWithValues: self.messages.map { ($0.id, $0) })
-                    for m in newMessages {
-                        // Merge or update reaction counts
-                        if let existing = map[m.id] {
-                            var mergedReactions = existing.reactions
-                            for (emoji, count) in m.reactions {
-                                mergedReactions[emoji] = max(mergedReactions[emoji] ?? 0, count)
-                            }
-                            var updated = m
-                            updated.reactions = mergedReactions
-                            map[m.id] = updated
-                        } else {
-                            map[m.id] = m
-                        }
-                    }
-                    self.messages = map.values.sorted(by: { $0.timestamp < $1.timestamp })
-                }
-            }
-        }.resume()
     }
 }

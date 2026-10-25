@@ -196,6 +196,56 @@ public struct ChatMessage: Identifiable, Codable, Equatable {
     }
 }
 
+public struct GroupPlaylistItem: Identifiable, Codable, Equatable {
+    public var id: String { song.id }
+    public let song: Song
+    public let addedBy: String
+    public let addedAt: Date
+
+    public init(song: Song, addedBy: String, addedAt: Date = Date()) {
+        self.song = song
+        self.addedBy = addedBy
+        self.addedAt = addedAt
+    }
+}
+
+public struct GroupSyncPacket: Codable {
+    public let type: String // "CHAT_MSG", "PLAYLIST_ADD", "PLAYLIST_CLEAR", "SYNC_PLAYBACK"
+    public let roomId: String
+    public let senderId: String
+    public let senderName: String
+    public let message: ChatMessage?
+    public let song: Song?
+    public let playlist: [Song]?
+    public let action: String? // "PLAY", "PAUSE", "SEEK"
+    public let positionSec: Double?
+    public let timestamp: Double?
+
+    public init(
+        type: String,
+        roomId: String,
+        senderId: String,
+        senderName: String,
+        message: ChatMessage? = nil,
+        song: Song? = nil,
+        playlist: [Song]? = nil,
+        action: String? = nil,
+        positionSec: Double? = nil,
+        timestamp: Double? = Date().timeIntervalSince1970 * 1000.0
+    ) {
+        self.type = type
+        self.roomId = roomId
+        self.senderId = senderId
+        self.senderName = senderName
+        self.message = message
+        self.song = song
+        self.playlist = playlist
+        self.action = action
+        self.positionSec = positionSec
+        self.timestamp = timestamp
+    }
+}
+
 public enum RepeatMode: String, CaseIterable {
     case off
     case all

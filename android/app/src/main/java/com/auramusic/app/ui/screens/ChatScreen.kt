@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,22 +29,21 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.EmojiEmotions
-import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -73,7 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.auramusic.app.data.models.ChatMessage
-import com.auramusic.app.data.models.ChatRoom
+import com.auramusic.app.data.models.GroupPlaylistItem
 import com.auramusic.app.data.repository.ChatManager
 import com.auramusic.app.player.PlaybackManager
 import com.auramusic.app.ui.theme.AuraAccent
@@ -96,10 +94,12 @@ fun ChatScreen() {
     val currentRoom by ChatManager.currentRoom.collectAsState()
     val availableRooms by ChatManager.availableRooms.collectAsState()
     val messages by ChatManager.messages.collectAsState()
+    val groupPlaylist by ChatManager.groupPlaylist.collectAsState()
     val currentSong by PlaybackManager.currentSong.collectAsState()
 
     var showGroupDrawer by remember { mutableStateOf(false) }
     var groupSearchQuery by remember { mutableStateOf("") }
+    var showPlaylistDrawer by remember { mutableStateOf(false) }
 
     var textInput by remember { mutableStateOf("") }
     var showEmojiBar by remember { mutableStateOf(false) }
@@ -220,27 +220,45 @@ fun ChatScreen() {
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Toggle Groups Drawer Button
+                // Group Playlist Toggle Button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
+                        .background(if (showPlaylistDrawer) AuraPrimary else AuraSurfaceLight)
+                        .clickable { showPlaylistDrawer = !showPlaylistDrawer }
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QueueMusic,
+                        contentDescription = "Playlist",
+                        tint = if (showPlaylistDrawer) AuraTextPrimary else AuraAccent,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "${groupPlaylist.size}",
+                        color = if (showPlaylistDrawer) AuraTextPrimary else AuraAccent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Toggle Groups Search Button
+                IconButton(
+                    onClick = { showGroupDrawer = !showGroupDrawer },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
                         .background(if (showGroupDrawer) AuraPrimary else AuraSurfaceLight)
-                        .clickable { showGroupDrawer = !showGroupDrawer }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search Groups",
                         tint = if (showGroupDrawer) AuraTextPrimary else AuraAccent,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Groups",
-                        color = if (showGroupDrawer) AuraTextPrimary else AuraAccent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        modifier = Modifier.size(16.dp)
                     )
                 }
 
@@ -265,6 +283,153 @@ fun ChatScreen() {
         }
 
         // -------------------------------------------------------------
+        // Group Collaborative Playlist Drawer (Real-Time Synced)
+        // -------------------------------------------------------------
+        AnimatedVisibility(
+            visible = showPlaylistDrawer,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(AuraSurface)
+                    .border(1.dp, AuraCardBorder)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.QueueMusic,
+                            contentDescription = null,
+                            tint = AuraAccent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Group Playlist • ${groupPlaylist.size} tracks",
+                            color = AuraTextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    if (currentSong != null) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(AuraPrimary.copy(alpha = 0.25f))
+                                .clickable {
+                                    ChatManager.addSongToGroupPlaylist(currentSong!!)
+                                    Toast.makeText(context, "Added '${currentSong!!.title}' to group playlist!", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlaylistAdd,
+                                contentDescription = null,
+                                tint = AuraAccent,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "+ Add Playing Song",
+                                color = AuraAccent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (groupPlaylist.isEmpty()) {
+                    Text(
+                        text = "No tracks in group playlist yet. Anyone in the group can add songs!",
+                        color = AuraTextMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                } else {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(groupPlaylist) { item ->
+                            val isPlayingThis = currentSong?.id == item.song.id
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isPlayingThis) AuraPrimary.copy(alpha = 0.35f) else AuraSurfaceLight)
+                                    .border(
+                                        1.dp,
+                                        if (isPlayingThis) AuraAccent else AuraCardBorder,
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        PlaybackManager.playSong(item.song)
+                                        ChatManager.syncPlaybackToGroup(item.song, isPlaying = true)
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = item.song.thumbnailUrl,
+                                    contentDescription = item.song.title,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(6.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.width(130.dp)) {
+                                    Text(
+                                        text = item.song.title,
+                                        color = AuraTextPrimary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Added by ${item.addedBy}",
+                                        color = AuraAccent,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        PlaybackManager.playSong(item.song)
+                                        ChatManager.syncPlaybackToGroup(item.song, isPlaying = true)
+                                    },
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(AuraAccent)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Play",
+                                        tint = AuraBackground,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
         // Search & Groups Drawer (Collapsible)
         // -------------------------------------------------------------
         AnimatedVisibility(
@@ -278,7 +443,6 @@ fun ChatScreen() {
                     .background(AuraSurfaceLight)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                // Search Input Field
                 OutlinedTextField(
                     value = groupSearchQuery,
                     onValueChange = { groupSearchQuery = it },
@@ -325,7 +489,6 @@ fun ChatScreen() {
                 val cleanQuery = groupSearchQuery.trim()
                 val isCustomCode = cleanQuery.isNotBlank() && availableRooms.none { it.id.equals(cleanQuery, ignoreCase = true) }
 
-                // Direct Join card if user types a custom Room ID or Group Code
                 if (isCustomCode) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
@@ -374,7 +537,6 @@ fun ChatScreen() {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Filtered Groups Pills
                 val filtered = if (cleanQuery.isBlank()) {
                     availableRooms
                 } else {
@@ -442,7 +604,6 @@ fun ChatScreen() {
             contentPadding = PaddingValues(top = 10.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Room Intro banner item
             item {
                 Box(
                     modifier = Modifier
@@ -454,13 +615,13 @@ fun ChatScreen() {
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "🎧 Real-Time Live Music Room",
+                            text = "🎧 Real-Time Live Music Group",
                             color = AuraAccent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Share live playing songs, react with emojis, or invite friends using Code: ${currentRoom.id}",
+                            text = "Collaborative Playlist Active: anyone in this group can add songs and chat in real time.",
                             color = AuraTextMuted,
                             fontSize = 11.sp,
                             textAlign = TextAlign.Center
@@ -474,6 +635,10 @@ fun ChatScreen() {
                     message = message,
                     onReact = { emoji ->
                         ChatManager.addReaction(message.id, emoji)
+                    },
+                    onAddToPlaylist = { song ->
+                        ChatManager.addSongToGroupPlaylist(song)
+                        Toast.makeText(context, "Added '${song.title}' to group playlist!", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -488,30 +653,28 @@ fun ChatScreen() {
                 .background(AuraSurface)
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            // "Share Current Playing Song" chip
+            // "Share & Add to Group Playlist" chip
             if (currentSong != null) {
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(AuraPrimary.copy(alpha = 0.2f))
                         .clickable {
-                            ChatManager.sendMessage(
-                                text = "🎧 Check out this live song: ${currentSong!!.title}",
-                                sharedSong = currentSong
-                            )
+                            ChatManager.addSongToGroupPlaylist(currentSong!!)
+                            Toast.makeText(context, "Shared to Group Playlist: ${currentSong!!.title}", Toast.LENGTH_SHORT).show()
                         }
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.MusicNote,
+                        imageVector = Icons.Default.PlaylistAdd,
                         contentDescription = null,
                         tint = AuraAccent,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Share playing: ${currentSong!!.title} - ${currentSong!!.artist}",
+                        text = "Add to Group Playlist: ${currentSong!!.title}",
                         color = AuraAccent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
@@ -520,7 +683,7 @@ fun ChatScreen() {
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "Share 🚀",
+                        text = "+ Add 🚀",
                         color = AuraTextPrimary,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -612,7 +775,7 @@ fun ChatScreen() {
                         .background(if (textInput.isNotBlank()) AuraPrimary else AuraSurfaceLight)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Send,
+                        imageVector = Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Send",
                         tint = if (textInput.isNotBlank()) AuraTextPrimary else AuraTextMuted,
                         modifier = Modifier.size(18.dp)
@@ -741,7 +904,8 @@ fun ChatScreen() {
 @Composable
 fun MessageBubble(
     message: ChatMessage,
-    onReact: (String) -> Unit
+    onReact: (String) -> Unit,
+    onAddToPlaylist: (com.auramusic.app.data.models.Song) -> Unit
 ) {
     val isMe = message.isFromMe
     var showReactPicker by remember { mutableStateOf(false) }
@@ -813,8 +977,31 @@ fun MessageBubble(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+
+                        // Add to Playlist Button
                         IconButton(
-                            onClick = { PlaybackManager.playSong(song) },
+                            onClick = { onAddToPlaylist(song) },
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(AuraSurfaceLight)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlaylistAdd,
+                                contentDescription = "Add to Playlist",
+                                tint = AuraAccent,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // Play Button
+                        IconButton(
+                            onClick = {
+                                PlaybackManager.playSong(song)
+                                ChatManager.syncPlaybackToGroup(song, isPlaying = true)
+                            },
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)

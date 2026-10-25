@@ -636,7 +636,8 @@ function broadcastPlaybackSync(payload) {
 
   // 2. Real-Time PubSub SSE Relay
   try {
-    fetch(`https://ntfy.sh/aura_music_sync_${state.currentRoom.id}`, {
+    const topic = 'aura_music_' + (state.currentRoom.id || 'room_global').trim().toLowerCase().replace(/-/g, '_').replace(/ /g, '_');
+    fetch(`https://ntfy.sh/${topic}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(syncPacket)
@@ -657,7 +658,8 @@ function startRoomSyncListener(roomId) {
 
   // 2. SSE Relay
   try {
-    sseSyncSource = new EventSource(`https://ntfy.sh/aura_music_sync_${roomId}/sse`);
+    const topic = 'aura_music_' + (roomId || 'room_global').trim().toLowerCase().replace(/-/g, '_').replace(/ /g, '_');
+    sseSyncSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
     sseSyncSource.onmessage = (event) => {
       try {
         const raw = JSON.parse(event.data);
@@ -810,7 +812,8 @@ function setupRoomChat() {
     }
 
     try {
-      fetch(`https://ntfy.sh/aura_music_chat_${state.currentRoom.id}`, {
+      const topic = 'aura_music_' + (state.currentRoom.id || 'room_global').trim().toLowerCase().replace(/-/g, '_').replace(/ /g, '_');
+      fetch(`https://ntfy.sh/${topic}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(message)
@@ -847,7 +850,8 @@ function shareSongToChat(song) {
       db.ref(`rooms/${state.currentRoom.id}/messages/${msg.id}`).set(msg);
     }
     try {
-      fetch(`https://ntfy.sh/aura_music_chat_${state.currentRoom.id}`, {
+      const topic = 'aura_music_' + (state.currentRoom.id || 'room_global').trim().toLowerCase().replace(/-/g, '_').replace(/ /g, '_');
+      fetch(`https://ntfy.sh/${topic}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(msg)
@@ -882,7 +886,8 @@ function listenToFirebaseRoom(roomId) {
   }
 
   try {
-    sseChatSource = new EventSource(`https://ntfy.sh/aura_music_chat_${roomId}/sse`);
+    const topic = 'aura_music_' + (roomId || 'room_global').trim().toLowerCase().replace(/-/g, '_').replace(/ /g, '_');
+    sseChatSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
     sseChatSource.onmessage = (event) => {
       try {
         const raw = JSON.parse(event.data);
