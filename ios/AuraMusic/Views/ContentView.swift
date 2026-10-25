@@ -10,14 +10,16 @@ public struct ContentView: View {
 
     public var body: some View {
         ZStack(alignment: .bottom) {
-            // 1. Active WebKit Player (Kept at 100% opacity so WebKit audio engine NEVER throttles)
-            YouTubeBackgroundPlayerView()
-                .frame(width: 320, height: 240)
-                .allowsHitTesting(false)
-
-            // 2. Deep Solid Canvas (Completely covers background player visually)
+            // 1. Deep Solid Canvas
             AuraColors.background
                 .ignoresSafeArea()
+
+            // 2. Active WebKit Player with 0.02 opacity on screen so WebKit compositor treats it as active
+            YouTubeBackgroundPlayerView()
+                .frame(width: 48, height: 48)
+                .opacity(0.02)
+                .allowsHitTesting(false)
+                .position(x: 24, y: 24)
 
             // 3. Main Active Screen Container
             Group {
@@ -29,7 +31,7 @@ public struct ContentView: View {
                 case 2:
                     LibraryView()
                 case 3:
-                    ChatView()
+                    ChatView(bottomInset: player.currentSong != nil ? 140 : 85)
                 default:
                     HomeView(onNavigateToChat: { selectedTab = 3 })
                 }

@@ -54,6 +54,20 @@ object ChatManager {
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
+    init {
+        val randomNum = (1000..9999).random()
+        val defaultHandle = "Listener_$randomNum"
+        joinRoom(defaultHandle, "01/01/2000", defaultRooms[0])
+    }
+
+    fun updateProfileName(newName: String) {
+        val clean = newName.trim()
+        if (clean.isBlank()) return
+        val current = _currentProfile.value
+        val dob = current?.dob ?: "01/01/2000"
+        _currentProfile.value = RoomProfile(name = clean, dob = dob)
+    }
+
     fun createRoom(name: String, description: String = ""): ChatRoom {
         val trimmed = name.trim().ifBlank { "Aura Lounge" }
         val randomNum = (1000..9999).random()

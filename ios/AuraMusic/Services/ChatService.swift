@@ -21,7 +21,17 @@ public final class ChatService: ObservableObject {
 
     private init() {
         self.availableRooms = defaultRooms
-        self.currentRoom = defaultRooms[0]
+        let initialRoom = defaultRooms[0]
+        self.currentRoom = initialRoom
+        let defaultHandle = "Listener_\(Int.random(in: 1000...9999))"
+        joinRoom(name: defaultHandle, dob: "01/01/2000", room: initialRoom)
+    }
+
+    public func updateProfileName(_ newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let dob = currentProfile?.dob ?? "01/01/2000"
+        self.currentProfile = RoomProfile(name: trimmed, dob: dob)
     }
 
     public static func normalizedTopic(for roomId: String) -> String {

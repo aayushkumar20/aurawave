@@ -54,7 +54,12 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         #if os(iOS)
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, policy: .default, options: [])
+            try session.setCategory(
+                .playback,
+                mode: .default,
+                policy: .default,
+                options: [.mixWithOthers, .allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
+            )
             try session.setActive(true)
         } catch {
             print("[Aura Audio] Failed to configure AVAudioSession: \(error)")
@@ -116,6 +121,7 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         let config = WKWebViewConfiguration()
         #if os(iOS)
         config.allowsInlineMediaPlayback = true
+        config.allowsAirPlayForMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         #endif
         let contentController = WKUserContentController()
@@ -292,16 +298,26 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
           }
         }, true);
 
-        // Active Watchdog: Auto-resumes within 250ms if lock screen triggers unexpected pause
+        // Active Watchdog: Auto-resumes within 200ms if lock screen triggers unexpected pause
         setInterval(function() {
-          if (!isUserPaused && isReady && player && typeof player.getPlayerState === 'function') {
+          if (!isUserPaused) {
             try {
-              if (player.getPlayerState() === 2) {
-                player.playVideo();
+              var vids = document.querySelectorAll('video');
+              for (var i = 0; i < vids.length; i++) {
+                if (vids[i].paused) {
+                  vids[i].play();
+                }
               }
-            } catch(err) {}
+            } catch(e) {}
+            if (isReady && player && typeof player.getPlayerState === 'function') {
+              try {
+                if (player.getPlayerState() === 2) {
+                  player.playVideo();
+                }
+              } catch(err) {}
+            }
           }
-        }, 250);
+        }, 200);
         </script>
         </body>
         </html>

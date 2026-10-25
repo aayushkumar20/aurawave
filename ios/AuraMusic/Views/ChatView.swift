@@ -1,411 +1,446 @@
 import SwiftUI
 
-enum RoomJoinMode {
-    case browse
-    case joinById
-    case createRoom
-}
-
 public struct ChatView: View {
     @ObservedObject var chatService = ChatService.shared
     @ObservedObject var player = AudioPlayerService.shared
 
-    @State private var inputName: String = ""
-    @State private var inputDob: String = ""
-    @State private var joinMode: RoomJoinMode = .browse
-    @State private var customRoomId: String = ""
-    @State private var newGroupName: String = ""
-    @State private var newGroupDesc: String = ""
-    @State private var selectedRoom: ChatRoom = ChatService.shared.defaultRooms[0]
+    public let bottomInset: CGFloat
 
     @State private var textInput: String = ""
     @State private var showEmojiBar: Bool = false
-    @State private var showRoomSwitchBar: Bool = false
+    @State private var showGroupDrawer: Bool = false
+    @State private var groupSearchText: String = ""
     @State private var copiedNotice: Bool = false
+    @State private var showEditNameDialog: Bool = false
+    @State private var newNameInput: String = ""
+    @State private var showCreateGroupDialog: Bool = false
+    @State private var newGroupName: String = ""
+    @State private var newGroupDesc: String = ""
 
-    public init() {}
+    public init(bottomInset: CGFloat = 85) {
+        self.bottomInset = bottomInset
+    }
 
     public var body: some View {
-        if let profile = chatService.currentProfile {
-            // Joined in Room
+        ZStack(alignment: .bottom) {
+            Color(hex: "090D16").ignoresSafeArea()
+
             VStack(spacing: 0) {
-                // Header
-                VStack(spacing: 6) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text("#\(chatService.currentRoom.name)")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
-                                Circle()
-                                    .fill(Color(hex: "10B981"))
-                                    .frame(width: 8, height: 8)
-                            }
+                // Top Header Bar
+                chatHeader
 
-                            HStack(spacing: 6) {
-                                // 1-Tap Copyable Room ID Badge
-                                Button(action: {
-                                    UIPasteboard.general.string = chatService.currentRoom.id
-                                    withAnimation {
-                                        copiedNotice = true
-                                    }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                        withAnimation { copiedNotice = false }
-                                    }
-                                }) {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: copiedNotice ? "checkmark" : "doc.on.doc")
-                                            .font(.system(size: 9, weight: .bold))
-                                        Text(copiedNotice ? "Copied!" : chatService.currentRoom.id)
-                                            .font(.system(size: 10, weight: .bold))
-                                    }
-                                    .foregroundColor(copiedNotice ? Color(hex: "10B981") : Color(hex: "06B6D4"))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color(hex: "06B6D4").opacity(0.15))
-                                    .clipShape(Capsule())
-                                }
-
-                                Text("• \(profile.name)")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(Color(hex: "64748B"))
-                                    .lineLimit(1)
-                            }
-                        }
-
-                        Spacer()
-
-                        // Switch Room Button
-                        Button(action: { showRoomSwitchBar.toggle() }) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(Color(hex: "06B6D4"))
-                                .frame(width: 32, height: 32)
-                                .background(Color(hex: "1E2536"))
-                                .clipShape(Circle())
-                        }
-
-                        // Leave Room Button
-                        Button(action: { chatService.leaveRoom() }) {
-                            Image(systemName: "rectangle.portrait.and.arrow.right")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color(hex: "EF4444"))
-                                .frame(width: 32, height: 32)
-                                .background(Color(hex: "EF4444").opacity(0.15))
-                                .clipShape(Circle())
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-
-                    // Room Switcher Pill list
-                    if showRoomSwitchBar {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(chatService.availableRooms) { room in
-                                    let isCurrent = chatService.currentRoom.id == room.id
-                                    Text(room.name)
-                                        .font(.system(size: 12, weight: isCurrent ? .bold : .regular))
-                                        .foregroundColor(isCurrent ? .white : Color(hex: "94A3B8"))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(isCurrent ? Color(hex: "6366F1") : Color(hex: "1E2536"))
-                                        .clipShape(Capsule())
-                                        .onTapGesture {
-                                            chatService.switchRoom(room)
-                                            showRoomSwitchBar = false
-                                        }
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 4)
-                        }
-                    }
+                // Search & Groups Drawer (Collapsible)
+                if showGroupDrawer {
+                    groupSearchDrawer
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .padding(.bottom, 8)
-                .background(Color(hex: "131824"))
 
-                // Message Thread
+                // Messages Thread
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 12) {
+                            // Welcome / Announcement Banner
+                            roomIntroBanner
+
                             ForEach(chatService.messages) { msg in
                                 messageBubbleView(msg: msg)
                                     .id(msg.id)
                             }
                         }
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
+                        .padding(.top, 12)
+                        // Generous bottom padding so message list is never hidden behind typing bar or bottom bar
+                        .padding(.bottom, bottomInset + 80)
                     }
                     .onChange(of: chatService.messages.count) { _ in
                         if let last = chatService.messages.last {
-                            withAnimation {
+                            withAnimation(.easeOut(duration: 0.25)) {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
                     }
                 }
+            }
 
-                // Bottom Input
-                VStack(spacing: 8) {
-                    if let current = player.currentSong {
-                        HStack(spacing: 6) {
-                            Image(systemName: "music.note")
-                                .font(.system(size: 12))
-                                .foregroundColor(Color(hex: "06B6D4"))
-                            Text("Share playing: \(current.title)")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(Color(hex: "06B6D4"))
-                                .lineLimit(1)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color(hex: "6366F1").opacity(0.2))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .onTapGesture {
-                            chatService.sendMessage(
-                                text: "🎧 Check out this live track: \(current.title)",
-                                sharedSong: current
-                            )
-                        }
-                    }
+            // Bottom Floating Input Bar anchored above bottom navigation / player bar
+            bottomInputBar
+                .padding(.bottom, bottomInset)
+        }
+        .sheet(isPresented: $showCreateGroupDialog) {
+            createGroupSheet
+        }
+        .alert("Change Display Handle", isPresented: $showEditNameDialog) {
+            TextField("Enter your name", text: $newNameInput)
+            Button("Save") {
+                if !newNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    chatService.updateProfileName(newNameInput)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Set how other listeners see you in live music rooms.")
+        }
+    }
 
-                    if showEmojiBar {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
-                                ForEach(chatService.popularEmojis, id: \.self) { emoji in
-                                    Text(emoji)
-                                        .font(.system(size: 20))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color(hex: "1E2536"))
-                                        .clipShape(Capsule())
-                                        .onTapGesture {
-                                            textInput.append(emoji)
-                                        }
-                                }
-                            }
-                        }
-                    }
-
-                    HStack(spacing: 8) {
-                        Button(action: { showEmojiBar.toggle() }) {
-                            Image(systemName: "face.smiling.fill")
-                                .font(.system(size: 20))
-                                .foregroundColor(showEmojiBar ? Color(hex: "06B6D4") : Color(hex: "94A3B8"))
-                                .frame(width: 36, height: 36)
-                        }
-
-                        TextField("Message #\(chatService.currentRoom.name)...", text: $textInput)
+    // -------------------------------------------------------------
+    // Top Chat Header Bar
+    // -------------------------------------------------------------
+    private var chatHeader: some View {
+        VStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
+                // Room info
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("#\(chatService.currentRoom.name)")
+                            .font(.system(size: 17, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(Color(hex: "090D16"))
-                            .clipShape(Capsule())
+                            .lineLimit(1)
 
+                        Circle()
+                            .fill(Color(hex: "10B981"))
+                            .frame(width: 8, height: 8)
+                    }
+
+                    HStack(spacing: 6) {
+                        // 1-Tap Copyable Code Pill
                         Button(action: {
-                            if !textInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                chatService.sendMessage(text: textInput)
-                                textInput = ""
+                            UIPasteboard.general.string = chatService.currentRoom.id
+                            withAnimation { copiedNotice = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation { copiedNotice = false }
                             }
                         }) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 34))
-                                .foregroundColor(Color(hex: "6366F1"))
+                            HStack(spacing: 4) {
+                                Image(systemName: copiedNotice ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 9, weight: .bold))
+                                Text(copiedNotice ? "Copied!" : chatService.currentRoom.id)
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundColor(copiedNotice ? Color(hex: "10B981") : Color(hex: "06B6D4"))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color(hex: "06B6D4").opacity(0.15))
+                            .clipShape(Capsule())
+                        }
+
+                        // User handle pill (tap to edit)
+                        Button(action: {
+                            newNameInput = chatService.currentProfile?.name ?? ""
+                            showEditNameDialog = true
+                        }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.system(size: 10))
+                                Text(chatService.currentProfile?.name ?? "Listener")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                            }
+                            .foregroundColor(Color(hex: "94A3B8"))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(hex: "1E2536"))
+                            .clipShape(Capsule())
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // Search & Groups Toggle Button
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showGroupDrawer.toggle()
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: showGroupDrawer ? "chevron.up" : "magnifyingglass")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Groups")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundColor(showGroupDrawer ? .white : Color(hex: "06B6D4"))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(showGroupDrawer ? Color(hex: "6366F1") : Color(hex: "1E2536"))
+                    .clipShape(Capsule())
+                }
+
+                // Create Group Button
+                Button(action: { showCreateGroupDialog = true }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 30, height: 30)
+                        .background(
+                            LinearGradient(
+                                colors: [Color(hex: "6366F1"), Color(hex: "06B6D4")],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .clipShape(Circle())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+        }
+        .background(Color(hex: "131824"))
+    }
+
+    // -------------------------------------------------------------
+    // Search & Groups Drawer
+    // -------------------------------------------------------------
+    private var groupSearchDrawer: some View {
+        VStack(spacing: 10) {
+            // Search Input Field
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(Color(hex: "64748B"))
+                    .font(.system(size: 14))
+
+                TextField("Search group name or enter code (e.g. AURA-XXXX)...", text: $groupSearchText)
+                    .foregroundColor(.white)
+                    .font(.system(size: 13))
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+
+                if !groupSearchText.isEmpty {
+                    Button(action: { groupSearchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Color(hex: "64748B"))
+                            .font(.system(size: 14))
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(hex: "090D16"))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+
+            // Direct Join card if user types a custom Room ID / Code
+            let cleanQuery = groupSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleanQuery.isEmpty && !chatService.availableRooms.contains(where: { $0.id.caseInsensitiveCompare(cleanQuery) == .orderedSame }) {
+                Button(action: {
+                    let name = chatService.currentProfile?.name ?? "Listener"
+                    let dob = chatService.currentProfile?.dob ?? "01/01/2000"
+                    _ = chatService.joinRoomById(name: name, dob: dob, roomId: cleanQuery)
+                    groupSearchText = ""
+                    withAnimation { showGroupDrawer = false }
+                }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(Color(hex: "06B6D4"))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Join Group Code: \(cleanQuery.uppercased())")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("Tap to connect directly to this room")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: "94A3B8"))
+                        }
+
+                        Spacer()
+
+                        Text("Join 🚀")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color(hex: "6366F1"))
+                            .clipShape(Capsule())
+                    }
+                    .padding(10)
+                    .background(Color(hex: "1E2536"))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 16)
+                }
+            }
+
+            // Available & Filtered Groups List
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(filteredRooms) { room in
+                        let isCurrent = chatService.currentRoom.id == room.id
+                        Button(action: {
+                            chatService.switchRoom(room)
+                            withAnimation { showGroupDrawer = false }
+                        }) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 4) {
+                                    Text(room.name)
+                                        .font(.system(size: 12, weight: isCurrent ? .bold : .medium))
+                                        .foregroundColor(isCurrent ? .white : Color(hex: "E2E8F0"))
+                                        .lineLimit(1)
+                                    if isCurrent {
+                                        Circle()
+                                            .fill(Color(hex: "10B981"))
+                                            .frame(width: 6, height: 6)
+                                    }
+                                }
+
+                                Text("ID: \(room.id)")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(Color(hex: "06B6D4"))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(isCurrent ? Color(hex: "6366F1") : Color(hex: "1E2536"))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Color(hex: "131824"))
+                .padding(.bottom, 6)
             }
-            .background(Color(hex: "090D16").ignoresSafeArea())
-        } else {
-            // Join Room Gateway (Browse, Join by ID, or Create Group)
-            ScrollView {
-                VStack(spacing: 20) {
-                    Spacer().frame(height: 20)
+        }
+        .padding(.vertical, 8)
+        .background(Color(hex: "161C2C"))
+    }
 
-                    VStack(spacing: 16) {
-                        Image(systemName: "person.2.badge.gearshape.fill")
-                            .font(.system(size: 36))
-                            .foregroundColor(Color(hex: "06B6D4"))
-                            .frame(width: 64, height: 64)
-                            .background(Color(hex: "6366F1").opacity(0.2))
-                            .clipShape(Circle())
-
-                        Text("Aura Live Chat & Groups")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(.white)
-
-                        Text("Listen together, share music & chat in real time across iOS & Android.")
-                            .font(.system(size: 13))
-                            .foregroundColor(Color(hex: "64748B"))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 8)
-
-                        // Name & DOB Inputs
-                        TextField("Your Name", text: $inputName)
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(Color(hex: "090D16"))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                        TextField("Date of Birth (e.g. 14/05/2002)", text: $inputDob)
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(Color(hex: "090D16"))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                        // Join Mode Switcher Tabs
-                        HStack(spacing: 4) {
-                            Button(action: { joinMode = .browse }) {
-                                Text("Rooms")
-                                    .font(.system(size: 12, weight: joinMode == .browse ? .bold : .regular))
-                                    .foregroundColor(joinMode == .browse ? .white : Color(hex: "94A3B8"))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .background(joinMode == .browse ? Color(hex: "6366F1") : Color.clear)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
-
-                            Button(action: { joinMode = .joinById }) {
-                                Text("Join with ID")
-                                    .font(.system(size: 12, weight: joinMode == .joinById ? .bold : .regular))
-                                    .foregroundColor(joinMode == .joinById ? .white : Color(hex: "94A3B8"))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .background(joinMode == .joinById ? Color(hex: "6366F1") : Color.clear)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
-
-                            Button(action: { joinMode = .createRoom }) {
-                                Text("+ Create")
-                                    .font(.system(size: 12, weight: joinMode == .createRoom ? .bold : .regular))
-                                    .foregroundColor(joinMode == .createRoom ? .white : Color(hex: "94A3B8"))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .background(joinMode == .createRoom ? Color(hex: "6366F1") : Color.clear)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
-                        }
-                        .padding(3)
-                        .background(Color(hex: "090D16"))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                        // Mode-Specific Fields
-                        switch joinMode {
-                        case .browse:
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Select Room:")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(Color(hex: "94A3B8"))
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        ForEach(chatService.availableRooms) { r in
-                                            let isSel = selectedRoom.id == r.id
-                                            Text(r.name)
-                                                .font(.system(size: 12, weight: isSel ? .bold : .regular))
-                                                .foregroundColor(isSel ? .white : Color(hex: "94A3B8"))
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 6)
-                                                .background(isSel ? Color(hex: "6366F1") : Color(hex: "090D16"))
-                                                .clipShape(Capsule())
-                                                .onTapGesture {
-                                                    selectedRoom = r
-                                                }
-                                        }
-                                    }
-                                }
-                            }
-
-                        case .joinById:
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Enter Room ID or Code:")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(Color(hex: "94A3B8"))
-
-                                TextField("e.g. AURA-4821 or room_global", text: $customRoomId)
-                                    .autocapitalization(.allCharacters)
-                                    .disableAutocorrection(true)
-                                    .foregroundColor(.white)
-                                    .padding(12)
-                                    .background(Color(hex: "090D16"))
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                            }
-
-                        case .createRoom:
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Group Name:")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(Color(hex: "94A3B8"))
-
-                                TextField("e.g. Late Night Squad", text: $newGroupName)
-                                    .foregroundColor(.white)
-                                    .padding(12)
-                                    .background(Color(hex: "090D16"))
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                                Text("Description (Optional):")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(Color(hex: "94A3B8"))
-
-                                TextField("e.g. Vibes & Hip-Hop", text: $newGroupDesc)
-                                    .foregroundColor(.white)
-                                    .padding(12)
-                                    .background(Color(hex: "090D16"))
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                            }
-                        }
-
-                        // Action Button
-                        Button(action: {
-                            guard !inputName.isEmpty && !inputDob.isEmpty else { return }
-
-                            switch joinMode {
-                            case .browse:
-                                chatService.joinRoom(name: inputName, dob: inputDob, room: selectedRoom)
-                            case .joinById:
-                                _ = chatService.joinRoomById(name: inputName, dob: inputDob, roomId: customRoomId)
-                            case .createRoom:
-                                _ = chatService.createAndJoinRoom(
-                                    userName: inputName,
-                                    userDob: inputDob,
-                                    roomName: newGroupName.isEmpty ? "Aura Lounge" : newGroupName,
-                                    description: newGroupDesc
-                                )
-                            }
-                        }) {
-                            Text(joinMode == .createRoom ? "Create & Join Group 🚀" : "Enter Room 🚀")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(
-                                    LinearGradient(
-                                        colors: [Color(hex: "6366F1"), Color(hex: "06B6D4")],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 14))
-                        }
-                        .disabled(inputName.isEmpty || inputDob.isEmpty)
-                    }
-                    .padding(20)
-                    .background(Color(hex: "131824"))
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .padding(.horizontal, 20)
-
-                    Spacer().frame(height: 30)
-                }
-            }
-            .background(Color(hex: "090D16").ignoresSafeArea())
+    private var filteredRooms: [ChatRoom] {
+        let q = groupSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if q.isEmpty {
+            return chatService.availableRooms
+        }
+        return chatService.availableRooms.filter {
+            $0.name.lowercased().contains(q) || $0.id.lowercased().contains(q)
         }
     }
 
+    // -------------------------------------------------------------
+    // Welcome / Info Banner
+    // -------------------------------------------------------------
+    private var roomIntroBanner: some View {
+        VStack(spacing: 4) {
+            Text("🎧 Real-Time Live Music Room")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(Color(hex: "06B6D4"))
+
+            Text("Share your current playing song, react with emojis, or invite friends using Code: \(chatService.currentRoom.id)")
+                .font(.system(size: 11))
+                .foregroundColor(Color(hex: "64748B"))
+                .multilineTextAlignment(.center)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(Color(hex: "131824").opacity(0.8))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.bottom, 6)
+    }
+
+    // -------------------------------------------------------------
+    // Bottom Input Bar
+    // -------------------------------------------------------------
+    private var bottomInputBar: some View {
+        VStack(spacing: 6) {
+            // Share Current Playing Track chip
+            if let current = player.currentSong {
+                Button(action: {
+                    chatService.sendMessage(
+                        text: "🎧 Check out this track: \(current.title)",
+                        sharedSong: current
+                    )
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: "06B6D4"))
+                        Text("Share playing: \(current.title) - \(current.artist)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(hex: "06B6D4"))
+                            .lineLimit(1)
+                        Spacer()
+                        Text("Share 🚀")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(hex: "6366F1"))
+                            .clipShape(Capsule())
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color(hex: "6366F1").opacity(0.18))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+
+            // Quick Emoji Drawer
+            if showEmojiBar {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(chatService.popularEmojis, id: \.self) { emoji in
+                            Text(emoji)
+                                .font(.system(size: 20))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color(hex: "1E2536"))
+                                .clipShape(Capsule())
+                                .onTapGesture {
+                                    textInput.append(emoji)
+                                }
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+
+            // Main Input Row
+            HStack(spacing: 8) {
+                Button(action: {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        showEmojiBar.toggle()
+                    }
+                }) {
+                    Image(systemName: "face.smiling.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(showEmojiBar ? Color(hex: "06B6D4") : Color(hex: "94A3B8"))
+                        .frame(width: 36, height: 36)
+                }
+
+                TextField("Message #\(chatService.currentRoom.name)...", text: $textInput)
+                    .font(.system(size: 14))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(hex: "090D16"))
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(Color(hex: "1E2536"), lineWidth: 1)
+                    )
+
+                Button(action: {
+                    let trimmed = textInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        chatService.sendMessage(text: trimmed)
+                        textInput = ""
+                    }
+                }) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 36))
+                        .foregroundColor(textInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color(hex: "475569") : Color(hex: "6366F1"))
+                }
+                .disabled(textInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color(hex: "131824").opacity(0.96))
+                .shadow(color: Color.black.opacity(0.4), radius: 10, y: -2)
+        )
+        .padding(.horizontal, 10)
+    }
+
+    // -------------------------------------------------------------
+    // Message Bubble View
+    // -------------------------------------------------------------
     @ViewBuilder
     private func messageBubbleView(msg: ChatMessage) -> some View {
         let isMe = msg.isFromMe
@@ -457,16 +492,6 @@ public struct ChatView: View {
                                 .background(Color(hex: "06B6D4"))
                                 .clipShape(Circle())
                         }
-
-                        // Play Next in Queue Button
-                        Button(action: { player.playNext(song) }) {
-                            Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white)
-                                .frame(width: 30, height: 30)
-                                .background(Color(hex: "1E2536"))
-                                .clipShape(Circle())
-                        }
                     }
                     .padding(8)
                     .background(Color.black.opacity(0.4))
@@ -482,12 +507,10 @@ public struct ChatView: View {
 
             // Reactions Row & Reaction Picker Button
             HStack(spacing: 6) {
-                // Existing reaction badges
                 ForEach(Array(msg.reactions.keys.sorted()), id: \.self) { emoji in
                     if let count = msg.reactions[emoji], count > 0 {
                         HStack(spacing: 3) {
-                            Text(emoji)
-                                .font(.system(size: 11))
+                            Text(emoji).font(.system(size: 11))
                             Text("\(count)")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(Color(hex: "94A3B8"))
@@ -519,5 +542,76 @@ public struct ChatView: View {
             .padding(.horizontal, 6)
         }
         .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
+    }
+
+    // -------------------------------------------------------------
+    // Create Group Sheet
+    // -------------------------------------------------------------
+    private var createGroupSheet: some View {
+        NavigationView {
+            ZStack {
+                Color(hex: "090D16").ignoresSafeArea()
+
+                VStack(spacing: 16) {
+                    Text("Create a Music Group")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.top, 12)
+
+                    Text("You will get a unique Room Code (e.g. AURA-XXXX) that your friends can search and join.")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: "94A3B8"))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+
+                    TextField("Group Name (e.g. EDM Hype Lounge)", text: $newGroupName)
+                        .foregroundColor(.white)
+                        .padding(12)
+                        .background(Color(hex: "131824"))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal, 16)
+
+                    TextField("Description (Optional)", text: $newGroupDesc)
+                        .foregroundColor(.white)
+                        .padding(12)
+                        .background(Color(hex: "131824"))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal, 16)
+
+                    Button(action: {
+                        let name = chatService.currentProfile?.name ?? "Listener"
+                        let dob = chatService.currentProfile?.dob ?? "01/01/2000"
+                        _ = chatService.createAndJoinRoom(
+                            userName: name,
+                            userDob: dob,
+                            roomName: newGroupName.isEmpty ? "Aura Lounge" : newGroupName,
+                            description: newGroupDesc
+                        )
+                        newGroupName = ""
+                        newGroupDesc = ""
+                        showCreateGroupDialog = false
+                    }) {
+                        Text("Create & Enter Room 🚀")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(hex: "6366F1"), Color(hex: "06B6D4")],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                    Spacer()
+                }
+            }
+            .navigationBarItems(trailing: Button("Cancel") { showCreateGroupDialog = false })
+        }
     }
 }
