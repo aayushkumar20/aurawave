@@ -8,6 +8,8 @@ import com.auramusic.app.data.models.RoomProfile
 import com.auramusic.app.data.models.Song
 import com.auramusic.app.player.PlaybackManager
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonDeserializer
 import com.google.gson.JsonObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +33,44 @@ object ChatManager {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
-    private val gson = Gson()
+    private val gson = GsonBuilder()
+        .registerTypeAdapter(Long::class.java, JsonDeserializer { json, _, _ ->
+            try {
+                if (json.isJsonPrimitive && json.asJsonPrimitive.isNumber) {
+                    json.asDouble.toLong()
+                } else {
+                    json.asString.toDoubleOrNull()?.toLong() ?: 0L
+                }
+            } catch (_: Exception) { 0L }
+        })
+        .registerTypeAdapter(java.lang.Long::class.java, JsonDeserializer { json, _, _ ->
+            try {
+                if (json.isJsonPrimitive && json.asJsonPrimitive.isNumber) {
+                    json.asDouble.toLong()
+                } else {
+                    json.asString.toDoubleOrNull()?.toLong() ?: 0L
+                }
+            } catch (_: Exception) { 0L }
+        })
+        .registerTypeAdapter(Double::class.java, JsonDeserializer { json, _, _ ->
+            try {
+                if (json.isJsonPrimitive && json.asJsonPrimitive.isNumber) {
+                    json.asDouble
+                } else {
+                    json.asString.toDoubleOrNull() ?: 0.0
+                }
+            } catch (_: Exception) { 0.0 }
+        })
+        .registerTypeAdapter(java.lang.Double::class.java, JsonDeserializer { json, _, _ ->
+            try {
+                if (json.isJsonPrimitive && json.asJsonPrimitive.isNumber) {
+                    json.asDouble
+                } else {
+                    json.asString.toDoubleOrNull() ?: 0.0
+                }
+            } catch (_: Exception) { 0.0 }
+        })
+        .create()
     private var syncJob: Job? = null
 
     // Configured Firebase project endpoint

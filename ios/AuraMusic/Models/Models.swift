@@ -72,7 +72,7 @@ public struct Song: Identifiable, Codable, Equatable {
         try container.encode(album, forKey: .album)
         try container.encode(durationText, forKey: .durationText)
         try container.encode(durationSeconds, forKey: .durationSeconds)
-        try container.encode(durationMs, forKey: .durationMs)
+        try container.encode(Int64(durationMs), forKey: .durationMs)
         try container.encode(thumbnailUrl, forKey: .thumbnailUrl)
         try container.encodeIfPresent(streamUrl, forKey: .streamUrl)
         try container.encode(isFavorite, forKey: .isFavorite)
@@ -188,8 +188,8 @@ public struct ChatMessage: Identifiable, Codable, Equatable {
         try container.encode(senderId, forKey: .senderId)
         try container.encode(senderName, forKey: .senderName)
         try container.encode(text, forKey: .text)
-        // Store timestamp as Unix milliseconds (standard across Android & Web)
-        try container.encode(timestamp.timeIntervalSince1970 * 1000.0, forKey: .timestamp)
+        // Store timestamp as integer Unix milliseconds (compatible with Kotlin Long)
+        try container.encode(Int64(timestamp.timeIntervalSince1970 * 1000.0), forKey: .timestamp)
         try container.encodeIfPresent(sharedSong, forKey: .sharedSong)
         try container.encode(reactions, forKey: .reactions)
         try container.encode(isFromMe, forKey: .isFromMe)
@@ -219,7 +219,7 @@ public struct GroupSyncPacket: Codable {
     public let playlist: [Song]?
     public let action: String? // "PLAY", "PAUSE", "SEEK"
     public let positionSec: Double?
-    public let timestamp: Double?
+    public let timestamp: Int64?
 
     public init(
         type: String,
@@ -231,7 +231,7 @@ public struct GroupSyncPacket: Codable {
         playlist: [Song]? = nil,
         action: String? = nil,
         positionSec: Double? = nil,
-        timestamp: Double? = Date().timeIntervalSince1970 * 1000.0
+        timestamp: Int64? = Int64(Date().timeIntervalSince1970 * 1000.0)
     ) {
         self.type = type
         self.roomId = roomId

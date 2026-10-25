@@ -47,6 +47,15 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.rememberCoroutineScope
+import com.auramusic.app.data.api.YouTubeMusicEngine
+import com.auramusic.app.data.models.Song
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -89,6 +98,7 @@ import com.auramusic.app.ui.theme.AuraTextSecondary
 fun ChatScreen() {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
 
     val profile by ChatManager.currentProfile.collectAsState()
     val currentRoom by ChatManager.currentRoom.collectAsState()
@@ -110,6 +120,29 @@ fun ChatScreen() {
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
     var newGroupDesc by remember { mutableStateOf("") }
+
+    var showAddSongDialog by remember { mutableStateOf(false) }
+    var songSearchQuery by remember { mutableStateOf("") }
+    var songSearchResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var isSearchingSong by remember { mutableStateOf(false) }
+    var songSearchJob by remember { mutableStateOf<Job?>(null) }
+
+    fun triggerSongSearch(q: String) {
+        songSearchJob?.cancel()
+        val query = q.trim()
+        if (query.isBlank()) {
+            songSearchResults = emptyList()
+            isSearchingSong = false
+            return
+        }
+        isSearchingSong = true
+        songSearchJob = scope.launch {
+            delay(300)
+            val res = YouTubeMusicEngine.searchSongs(query)
+            songSearchResults = res
+            isSearchingSong = false
+        }
+    }
 
     val listState = rememberLazyListState()
 
@@ -318,28 +351,59 @@ fun ChatScreen() {
                         )
                     }
 
-                    if (currentSong != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (currentSong != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AuraPrimary.copy(alpha = 0.25f))
+                                    .clickable {
+                                        ChatManager.addSongToGroupPlaylist(currentSong!!)
+                                        Toast.makeText(context, "Added '${currentSong!!.title}' to group playlist!", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(horizontal = 7.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlaylistAdd,
+                                    contentDescription = null,
+                                    tint = AuraAccent,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "Add Playing",
+                                    color = AuraAccent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+
+                        // Unconditional "+ Add Song" button: any listener can search & queue tracks
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(AuraPrimary.copy(alpha = 0.25f))
+                                .background(AuraPrimary)
                                 .clickable {
-                                    ChatManager.addSongToGroupPlaylist(currentSong!!)
-                                    Toast.makeText(context, "Added '${currentSong!!.title}' to group playlist!", Toast.LENGTH_SHORT).show()
+                                    songSearchQuery = ""
+                                    songSearchResults = emptyList()
+                                    showAddSongDialog = true
                                 }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.PlaylistAdd,
+                                imageVector = Icons.Default.Add,
                                 contentDescription = null,
-                                tint = AuraAccent,
+                                tint = AuraTextPrimary,
                                 modifier = Modifier.size(13.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = "+ Add Playing Song",
-                                color = AuraAccent,
+                                text = "+ Add Song",
+                                color = AuraTextPrimary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -350,12 +414,33 @@ fun ChatScreen() {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (groupPlaylist.isEmpty()) {
-                    Text(
-                        text = "No tracks in group playlist yet. Anyone in the group can add songs!",
-                        color = AuraTextMuted,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(vertical = 6.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(AuraSurfaceLight)
+                            .clickable {
+                                songSearchQuery = ""
+                                songSearchResults = emptyList()
+                                showAddSongDialog = true
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "No tracks yet. Tap to search & add songs to group!",
+                            color = AuraAccent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Icon(
+                            imageVector = Icons.Default.AddCircle,
+                            contentDescription = null,
+                            tint = AuraAccent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 } else {
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -738,7 +823,23 @@ fun ChatScreen() {
                     )
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = {
+                        songSearchQuery = ""
+                        songSearchResults = emptyList()
+                        showAddSongDialog = true
+                    },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlaylistAdd,
+                        contentDescription = "Add Song to Group Playlist",
+                        tint = AuraAccent,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(2.dp))
 
                 OutlinedTextField(
                     value = textInput,
@@ -894,6 +995,168 @@ fun ChatScreen() {
             dismissButton = {
                 TextButton(onClick = { showCreateGroupDialog = false }) {
                     Text("Cancel", color = AuraTextSecondary)
+                }
+            },
+            containerColor = AuraSurface
+        )
+    }
+
+    // -------------------------------------------------------------
+    // Add Song to Collaborative Group Playlist Dialog
+    // -------------------------------------------------------------
+    if (showAddSongDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddSongDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.PlaylistAdd, contentDescription = null, tint = AuraAccent, modifier = Modifier.size(22.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add Song to Group", color = AuraTextPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Search YouTube Music to add any track to the live group playlist for all listeners.",
+                        color = AuraTextSecondary,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = songSearchQuery,
+                        onValueChange = {
+                            songSearchQuery = it
+                            triggerSongSearch(it)
+                        },
+                        placeholder = { Text("Search song, artist, album...", color = AuraTextMuted, fontSize = 13.sp) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = AuraAccent, modifier = Modifier.size(18.dp))
+                        },
+                        trailingIcon = {
+                            if (songSearchQuery.isNotBlank()) {
+                                IconButton(onClick = {
+                                    songSearchQuery = ""
+                                    songSearchResults = emptyList()
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = AuraTextMuted, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AuraAccent,
+                            unfocusedBorderColor = AuraCardBorder,
+                            focusedTextColor = AuraTextPrimary,
+                            unfocusedTextColor = AuraTextPrimary
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (isSearchingSong) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = AuraAccent, modifier = Modifier.size(32.dp))
+                        }
+                    } else if (songSearchResults.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (songSearchQuery.isBlank()) "Type to search YouTube Music tracks..." else "No tracks found for '$songSearchQuery'",
+                                color = AuraTextMuted,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(260.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(songSearchResults) { song ->
+                                val isInPlaylist = groupPlaylist.any { it.song.id == song.id }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(AuraSurfaceLight)
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = song.thumbnailUrl,
+                                        contentDescription = song.title,
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(RoundedCornerShape(6.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = song.title,
+                                            color = AuraTextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = song.artist,
+                                            color = AuraTextSecondary,
+                                            fontSize = 10.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    Button(
+                                        onClick = {
+                                            ChatManager.addSongToGroupPlaylist(song)
+                                            Toast.makeText(context, "Added '${song.title}' to group playlist!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        enabled = !isInPlaylist,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isInPlaylist) AuraSuccess else AuraPrimary,
+                                            disabledContainerColor = AuraSuccess.copy(alpha = 0.5f)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        if (isInPlaylist) {
+                                            Icon(Icons.Default.Check, contentDescription = null, tint = AuraTextPrimary, modifier = Modifier.size(13.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Added", color = AuraTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        } else {
+                                            Icon(Icons.Default.Add, contentDescription = null, tint = AuraTextPrimary, modifier = Modifier.size(13.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Add", color = AuraTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showAddSongDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = AuraPrimary)
+                ) {
+                    Text("Done", color = AuraTextPrimary, fontWeight = FontWeight.Bold)
                 }
             },
             containerColor = AuraSurface
