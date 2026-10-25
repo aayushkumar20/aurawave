@@ -14,6 +14,8 @@ AuraWave is an open-source, ad-free music streaming client and collaborative par
 
 | Component | Android | iOS | Web |
 | :--- | :--- | :--- | :--- |
+| **Minimum OS Version** | **Android 8.0 (API 26, Oreo)** or higher | **iOS 16.0** or higher | Modern Browser (ES2022 + HTML5 Audio) |
+| **Target / Recommended** | Android 14 (API 34) | iOS 17.0+ / macOS 13.0+ (Ventura) | Chromium 90+, Safari 15+, Firefox 90+ |
 | **Language** | Kotlin 1.9+ | Swift 5.9+ | Vanilla JavaScript (ES2022) |
 | **UI Framework** | Jetpack Compose (Material 3) | SwiftUI | Semantic HTML5 + Custom CSS |
 | **Audio Engine** | AndroidX Media3 (ExoPlayer) | AVFoundation (`AVPlayer`) | HTML5 Audio / YouTube IFrame Engine |
@@ -299,6 +301,7 @@ aurawave/
 ## Installation & Build Commands
 
 ### Android
+- **Minimum OS**: **Android 8.0 (API 26, Oreo)** or higher (Target: Android 14, API 34).
 
 #### Install Pre-Compiled APK
 ```bash
@@ -315,6 +318,7 @@ The output file is generated at `android/app/build/outputs/apk/debug/app-debug.a
 ---
 
 ### iOS
+- **Minimum OS**: **iOS 16.0** or higher (iPhone 8 / X or newer) / **macOS 13.0+** (Ventura) for Catalyst/Mac targets.
 
 #### Build via Xcode
 1. Open the project:
@@ -333,6 +337,8 @@ xcodebuild -project ios/AuraMusic.xcodeproj -scheme AuraMusic -destination 'gene
 ---
 
 ### Web Player
+- **Browser Requirements**: Chrome 90+, Safari 15+, Firefox 90+, Edge 90+ (supporting HTML5 Audio and ES2022).
+
 Run a static server pointing to the web distribution:
 ```bash
 npx serve firebase/public
