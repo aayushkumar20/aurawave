@@ -47,6 +47,96 @@ Cross-platform synchronization (between Android, iOS, and Web) operates via a li
 
 ---
 
+## 📊 System Architecture & Flowcharts
+
+### 1. End-to-End Audio Pipeline & Ad-Bypass Flowchart
+How AuraWave streams high-fidelity music directly without commercial interruptions or sign-in requirements:
+
+```mermaid
+flowchart TD
+    subgraph Client["📱 AuraWave Client (Android / iOS / Web)"]
+        UserSearch["User Types Search / Selects Track"]
+        Engine["YouTubeMusicEngine (Native Client)"]
+        AudioDecoder["Native Decoders (Media3 ExoPlayer / AVPlayer)"]
+        LockScreen["Lock Screen & Notification Controls"]
+    end
+
+    subgraph YouTube["🌐 YouTube & Content Delivery Networks"]
+        InnerTube["YouTube InnerTube API / Public Endpoints"]
+        AdServer["❌ Ad Tracking & Video Ad Networks"]
+        AudioStream["✅ Direct Audio Streams (Opus 160kbps / AAC)"]
+    end
+
+    UserSearch -->|Search Query| Engine
+    Engine -->|1. Direct Metadata Lookup| InnerTube
+    InnerTube -->|2. Stream Manifest| Engine
+    Engine -.->|Bypasses & Drops Ads| AdServer
+    Engine -->|3. Clean Audio Stream URL| AudioDecoder
+    AudioStream -->|High-Fidelity Audio Bitstream| AudioDecoder
+    AudioDecoder -->|4. Continuous Background Playback| LockScreen
+```
+
+---
+
+### 2. Cross-Platform Collaborative Party & Playlist Sync Flowchart
+How multiple users across Android, iOS, and Web add songs, chat, and keep playback in sync in real time:
+
+```mermaid
+flowchart LR
+    subgraph iOSDevice["🍎 iOS Device (SwiftUI)"]
+        UseriOS["User A (iPhone)"]
+        ChatServiceiOS["ChatService & Group Playlist"]
+    end
+
+    subgraph Relay["⚡ Real-Time Streaming Channel (SSE)"]
+        Topic["Topic: aura_music_<room_code>"]
+        StreamServer["Real-Time SSE Event Stream"]
+    end
+
+    subgraph AndroidDevice["🤖 Android Device (Compose)"]
+        ChatManagerAnd["ChatManager & Group Playlist"]
+        UserAndroid["User B (Android Phone)"]
+    end
+
+    subgraph WebDevice["💻 Web Client (Browser)"]
+        WebSync["Web Player & Chat Room"]
+    end
+
+    UseriOS -->|"+ Add Song" / Message| ChatServiceiOS
+    ChatServiceiOS -->|"POST GroupSyncPacket (PLAYLIST_ADD / CHAT_MSG)"| Topic
+    Topic --> StreamServer
+    StreamServer -->|"Instant Push Stream (NDJSON / SSE)"| ChatManagerAnd
+    StreamServer -->|"Instant Push Stream (NDJSON / SSE)"| WebSync
+    ChatManagerAnd -->|"Auto-Appends Track to Shared Queue"| UserAndroid
+    UserAndroid -.->|"1-Tap Synced Playback"| ChatServiceiOS
+```
+
+---
+
+### 3. Security, Privacy & Zero-Listening-Port Flowchart
+How the application guarantees device safety and user privacy inside mobile OS sandboxes:
+
+```mermaid
+flowchart TD
+    subgraph Sandbox["🛡️ Mobile OS Sandbox (Android / iOS)"]
+        App["AuraWave Application"]
+        Perms["Standard Media Permissions\n(INTERNET, WAKE_LOCK, MEDIA_PLAYBACK)"]
+        NoPorts["❌ No Listening Server Ports\n❌ No ServerSocket / bind()\n❌ No Local Web Daemon"]
+    end
+
+    subgraph Network["🔒 Outbound Network Layer"]
+        OutboundTLS["Pure Outbound TLS / HTTPS (Port 443)"]
+        CDNs["YouTube Streams & SSE Pub/Sub"]
+    end
+
+    App --> Perms
+    App --- NoPorts
+    App -->|Secure Encrypted Outbound Requests| OutboundTLS
+    OutboundTLS --> CDNs
+```
+
+---
+
 ## 📂 Repository & Project Structure
 
 ```
