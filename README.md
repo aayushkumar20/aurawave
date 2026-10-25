@@ -245,6 +245,7 @@ flowchart TD
 ```
 aurawave/
 ├── AuraMusic-latest.apk        # Compiled Android debug APK
+├── COMPLIANCE.md               # Legal compliance, DMCA, and non-affiliation disclaimers
 ├── CONTRIBUTING.md             # Contribution rules and guidelines
 ├── CODE_OF_CONDUCT.md          # Contributor Covenant v2.1 code of conduct
 ├── LICENSE                     # MIT License
@@ -345,6 +346,14 @@ Or open `firebase/public/index.html` directly in any standards-compliant browser
 - **Outbound Connections Only**: Communication is restricted to standard HTTPS queries on port 443.
 - **No Privileged Permissions**: The app does not request access to contacts, location, camera, microphone, SMS, or local documents.
 - **Client-Side Isolation**: Incoming network payloads are strictly parsed into static data models via Gson and Swift Codable.
+
+---
+
+## Legal & Compliance Notice
+- **Non-Affiliation**: AuraWave is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Google LLC, YouTube, or Alphabet Inc.
+- **Zero Media Hosting**: The project does not host, store, or distribute any media files. Media streams are resolved on-demand and fetched directly by the end-user's device from public third-party content distribution networks.
+- **No DRM Circumvention**: The software does not bypass, defeat, or decrypt Digital Rights Management (DRM) or encrypted media streams.
+- **DMCA & Terms**: For full legal disclosures and copyright notice, see [COMPLIANCE.md](COMPLIANCE.md).
 
 ---
 
