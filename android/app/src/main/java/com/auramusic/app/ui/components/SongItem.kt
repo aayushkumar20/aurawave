@@ -172,6 +172,16 @@ fun SongItem(
                     }
                 )
                 DropdownMenuItem(
+                    text = { Text("Add to Group Playlist 🎶", color = AuraAccent) },
+                    leadingIcon = {
+                        Icon(Icons.Default.PlaylistAdd, contentDescription = null, tint = AuraAccent)
+                    },
+                    onClick = {
+                        showMenu = false
+                        com.auramusic.app.data.repository.ChatManager.addSongToGroupPlaylist(song)
+                    }
+                )
+                DropdownMenuItem(
                     text = { Text("Share to Chat", color = AuraTextPrimary) },
                     leadingIcon = {
                         Icon(Icons.Default.Chat, contentDescription = null, tint = AuraAccent)

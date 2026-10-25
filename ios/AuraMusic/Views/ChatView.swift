@@ -18,6 +18,12 @@ public struct ChatView: View {
     @State private var newGroupName: String = ""
     @State private var newGroupDesc: String = ""
 
+    @State private var showAddSongSheet: Bool = false
+    @State private var songSearchQuery: String = ""
+    @State private var songSearchResults: [Song] = []
+    @State private var isSearchingSongs: Bool = false
+    @State private var songSearchTask: Task<Void, Never>?
+
     public init(bottomInset: CGFloat = 85) {
         self.bottomInset = bottomInset
     }
@@ -75,6 +81,9 @@ public struct ChatView: View {
         }
         .sheet(isPresented: $showCreateGroupDialog) {
             createGroupSheet
+        }
+        .sheet(isPresented: $showAddSongSheet) {
+            addSongSheet
         }
         .alert("Change Display Handle", isPresented: $showEditNameDialog) {
             TextField("Enter your name", text: $newNameInput)
@@ -226,20 +235,47 @@ public struct ChatView: View {
 
                 Spacer()
 
-                if let current = player.currentSong {
+                HStack(spacing: 6) {
+                    if let current = player.currentSong {
+                        Button(action: {
+                            chatService.addSongToGroupPlaylist(current)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Add Playing")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(hex: "6366F1").opacity(0.8))
+                            .clipShape(Capsule())
+                        }
+                    }
+
+                    // Unconditional + Add Song button for any group member
                     Button(action: {
-                        chatService.addSongToGroupPlaylist(current)
+                        songSearchQuery = ""
+                        songSearchResults = []
+                        showAddSongSheet = true
                     }) {
                         HStack(spacing: 4) {
                             Image(systemName: "plus")
                                 .font(.system(size: 10, weight: .bold))
-                            Text("Add Playing")
+                            Text("Add Song")
                                 .font(.system(size: 10, weight: .bold))
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 4)
-                        .background(Color(hex: "6366F1"))
+                        .background(
+                            LinearGradient(
+                                colors: [Color(hex: "6366F1"), Color(hex: "06B6D4")],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .clipShape(Capsule())
                     }
                 }
@@ -247,11 +283,22 @@ public struct ChatView: View {
             .padding(.horizontal, 16)
 
             if chatService.groupPlaylist.isEmpty {
-                Text("No tracks in group playlist yet. Anyone in the room can add songs!")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(hex: "64748B"))
+                Button(action: {
+                    songSearchQuery = ""
+                    songSearchResults = []
+                    showAddSongSheet = true
+                }) {
+                    HStack {
+                        Text("No tracks yet. Tap to search & add songs to group!")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(hex: "06B6D4"))
+                        Spacer()
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(Color(hex: "06B6D4"))
+                    }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
+                }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
@@ -515,6 +562,17 @@ public struct ChatView: View {
                         .frame(width: 36, height: 36)
                 }
 
+                Button(action: {
+                    songSearchQuery = ""
+                    songSearchResults = []
+                    showAddSongSheet = true
+                }) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 20))
+                        .foregroundColor(Color(hex: "06B6D4"))
+                        .frame(width: 36, height: 36)
+                }
+
                 TextField("Message #\(chatService.currentRoom.name)...", text: $textInput)
                     .font(.system(size: 14))
                     .foregroundColor(.white)
@@ -740,6 +798,153 @@ public struct ChatView: View {
                 }
             }
             .navigationBarItems(trailing: Button("Cancel") { showCreateGroupDialog = false })
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Add Song to Collaborative Group Playlist Sheet
+    // -------------------------------------------------------------
+    private var addSongSheet: some View {
+        NavigationView {
+            ZStack {
+                Color(hex: "090D16").ignoresSafeArea()
+                VStack(spacing: 12) {
+                    // Search Input Field
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(Color(hex: "06B6D4"))
+                        TextField("Search YouTube Music to add to group...", text: $songSearchQuery)
+                            .foregroundColor(.white)
+                            .onChange(of: songSearchQuery) { newQuery in
+                                performSongSearch(query: newQuery)
+                            }
+                        if !songSearchQuery.isEmpty {
+                            Button(action: {
+                                songSearchQuery = ""
+                                songSearchResults = []
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(Color(hex: "94A3B8"))
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(Color(hex: "131824"))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(hex: "1E2536"), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+
+                    if isSearchingSongs {
+                        Spacer()
+                        ProgressView()
+                            .tint(Color(hex: "06B6D4"))
+                        Spacer()
+                    } else if songSearchResults.isEmpty {
+                        Spacer()
+                        VStack(spacing: 8) {
+                            Image(systemName: "music.note.list")
+                                .font(.system(size: 40))
+                                .foregroundColor(Color(hex: "475569"))
+                            Text("Search any track, artist or album")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(Color(hex: "94A3B8"))
+                            Text("Songs added will sync in real time to everyone in the room")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(hex: "64748B"))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                        }
+                        Spacer()
+                    } else {
+                        List {
+                            ForEach(songSearchResults) { song in
+                                let isAlreadyInPlaylist = chatService.groupPlaylist.contains(where: { $0.song.id == song.id })
+                                HStack(spacing: 12) {
+                                    AsyncImage(url: URL(string: song.thumbnailUrl)) { phase in
+                                        if let img = phase.image {
+                                            img.resizable().aspectRatio(contentMode: .fill)
+                                        } else {
+                                            Color(hex: "1E2536")
+                                        }
+                                    }
+                                    .frame(width: 44, height: 44)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(song.title)
+                                            .font(.system(size: 13, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .lineLimit(1)
+                                        Text(song.artist)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(Color(hex: "94A3B8"))
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer()
+
+                                    Button(action: {
+                                        chatService.addSongToGroupPlaylist(song)
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: isAlreadyInPlaylist ? "checkmark" : "plus")
+                                                .font(.system(size: 11, weight: .bold))
+                                            Text(isAlreadyInPlaylist ? "Added" : "Add")
+                                                .font(.system(size: 11, weight: .bold))
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(isAlreadyInPlaylist ? Color(hex: "10B981") : Color(hex: "6366F1"))
+                                        .clipShape(Capsule())
+                                    }
+                                    .disabled(isAlreadyInPlaylist)
+                                }
+                                .listRowBackground(Color(hex: "131824"))
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            }
+                        }
+                        .listStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle("Add to Group Playlist")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        showAddSongSheet = false
+                    }
+                    .foregroundColor(Color(hex: "06B6D4"))
+                    .font(.system(size: 14, weight: .bold))
+                }
+            }
+        }
+    }
+
+    private func performSongSearch(query: String) {
+        songSearchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            songSearchResults = []
+            isSearchingSongs = false
+            return
+        }
+
+        isSearchingSongs = true
+        songSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            let results = await YouTubeMusicEngine.shared.searchSongs(query: trimmed)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.songSearchResults = results
+                self.isSearchingSongs = false
+            }
         }
     }
 }
