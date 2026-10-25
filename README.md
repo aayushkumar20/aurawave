@@ -1,12 +1,12 @@
-# No Google Sign In Free Music Player with Zero Ads (Aura Music)
+# 🌊 AuraWave: Ad-Free Music Streaming & Real-Time Collaborative Lounges
 
-[![Platform](https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20Web-blue.svg)](https://github.com/aayushkumar20/no-google-sign-in-free-music-player-with-zero-ads)
+[![Platform](https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20Web-blue.svg)](https://github.com/aayushkumar20/aurawave)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Ads](https://img.shields.io/badge/Ads-Zero%20(100%25%20Ad--Blocked)-brightgreen.svg)](#)
 [![Google Sign-In](https://img.shields.io/badge/Google%20Sign--In-None%20Required-success.svg)](#)
 [![Sync](https://img.shields.io/badge/Real--Time%20Sync-Android%20%E2%87%84%20iOS%20%E2%87%84%20Web-purple.svg)](#)
 
-A high-performance, dual-native and web music streaming player built natively in **Kotlin + Jetpack Compose** for Android, **Swift + SwiftUI** for iOS, and a modern **Web Player**. It streams high-fidelity audio directly from YouTube Music with **100% ad-blocking (zero audio or video ads)**, requiring **no Google sign-in** or personal accounts.
+**AuraWave** is a high-performance, cross-platform music streaming and real-time collaborative party listening player built natively in **Kotlin + Jetpack Compose** for Android, **Swift + SwiftUI** for iOS, and a progressive **Web Player**. It streams high-fidelity audio directly from YouTube Music with **100% ad-blocking (zero audio or video ads)**, requiring **no Google sign-in**, accounts, or tracking.
 
 ---
 
@@ -50,7 +50,7 @@ Cross-platform synchronization (between Android, iOS, and Web) operates via a li
 ## 📂 Repository & Project Structure
 
 ```
-no-google-sign-in-free-music-player-with-zero-ads/
+aurawave/
 │
 ├── AuraMusic-latest.apk       # Pre-compiled latest Android standalone APK (Ready to install)
 ├── LICENSE                    # MIT Open Source License
