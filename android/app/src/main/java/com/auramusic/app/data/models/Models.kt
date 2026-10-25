@@ -54,6 +54,25 @@ data class ChatMessage(
     val isFromMe: Boolean = false
 )
 
+data class GroupPlaylistItem(
+    val song: Song,
+    val addedBy: String,
+    val addedAt: Long = System.currentTimeMillis()
+)
+
+data class GroupSyncPacket(
+    val type: String, // "CHAT_MSG", "PLAYLIST_ADD", "PLAYLIST_CLEAR", "SYNC_PLAYBACK"
+    val roomId: String,
+    val senderId: String,
+    val senderName: String,
+    val message: ChatMessage? = null,
+    val song: Song? = null,
+    val playlist: List<Song>? = null,
+    val action: String? = null, // "PLAY", "PAUSE", "SEEK"
+    val positionSec: Double = 0.0,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 enum class RepeatMode {
     OFF, ALL, ONE
 }

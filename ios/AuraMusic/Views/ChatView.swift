@@ -9,6 +9,7 @@ public struct ChatView: View {
     @State private var textInput: String = ""
     @State private var showEmojiBar: Bool = false
     @State private var showGroupDrawer: Bool = false
+    @State private var showPlaylistDrawer: Bool = false
     @State private var groupSearchText: String = ""
     @State private var copiedNotice: Bool = false
     @State private var showEditNameDialog: Bool = false
@@ -28,6 +29,12 @@ public struct ChatView: View {
             VStack(spacing: 0) {
                 // Top Header Bar
                 chatHeader
+
+                // Group Playlist Drawer (Collapsible)
+                if showPlaylistDrawer {
+                    groupPlaylistSection
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
 
                 // Search & Groups Drawer (Collapsible)
                 if showGroupDrawer {
@@ -146,23 +153,37 @@ public struct ChatView: View {
 
                 Spacer()
 
+                // Group Playlist Toggle Button
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showPlaylistDrawer.toggle()
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "music.note.list")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("\(chatService.groupPlaylist.count)")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundColor(showPlaylistDrawer ? .white : Color(hex: "06B6D4"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(showPlaylistDrawer ? Color(hex: "6366F1") : Color(hex: "1E2536"))
+                    .clipShape(Capsule())
+                }
+
                 // Search & Groups Toggle Button
                 Button(action: {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         showGroupDrawer.toggle()
                     }
                 }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: showGroupDrawer ? "chevron.up" : "magnifyingglass")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("Groups")
-                            .font(.system(size: 12, weight: .bold))
-                    }
-                    .foregroundColor(showGroupDrawer ? .white : Color(hex: "06B6D4"))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(showGroupDrawer ? Color(hex: "6366F1") : Color(hex: "1E2536"))
-                    .clipShape(Capsule())
+                    Image(systemName: showGroupDrawer ? "chevron.up" : "magnifyingglass")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(showGroupDrawer ? .white : Color(hex: "06B6D4"))
+                        .frame(width: 30, height: 30)
+                        .background(showGroupDrawer ? Color(hex: "6366F1") : Color(hex: "1E2536"))
+                        .clipShape(Circle())
                 }
 
                 // Create Group Button
@@ -186,6 +207,101 @@ public struct ChatView: View {
             .padding(.bottom, 8)
         }
         .background(Color(hex: "131824"))
+    }
+
+    // -------------------------------------------------------------
+    // Collaborative Group Playlist Drawer
+    // -------------------------------------------------------------
+    private var groupPlaylistSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: "06B6D4"))
+                    Text("Group Playlist • \(chatService.groupPlaylist.count) tracks")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
+                Spacer()
+
+                if let current = player.currentSong {
+                    Button(action: {
+                        chatService.addSongToGroupPlaylist(current)
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("Add Playing")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(hex: "6366F1"))
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+
+            if chatService.groupPlaylist.isEmpty {
+                Text("No tracks in group playlist yet. Anyone in the room can add songs!")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(hex: "64748B"))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(chatService.groupPlaylist) { item in
+                            let isPlayingThis = player.currentSong?.id == item.song.id
+                            HStack(spacing: 8) {
+                                AsyncImage(url: URL(string: item.song.thumbnailUrl)) { img in
+                                    img.resizable().aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Color(hex: "1E2536")
+                                }
+                                .frame(width: 36, height: 36)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.song.title)
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: 110, alignment: .leading)
+                                    Text("By \(item.addedBy)")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(Color(hex: "06B6D4"))
+                                        .lineLimit(1)
+                                }
+
+                                Button(action: {
+                                    player.playSong(item.song)
+                                    chatService.syncPlaybackToGroup(song: item.song, isPlaying: true)
+                                }) {
+                                    Image(systemName: isPlayingThis ? "speaker.wave.2.fill" : "play.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Color(hex: "090D16"))
+                                        .frame(width: 26, height: 26)
+                                        .background(Color(hex: "06B6D4"))
+                                        .clipShape(Circle())
+                                }
+                            }
+                            .padding(6)
+                            .background(isPlayingThis ? Color(hex: "6366F1").opacity(0.35) : Color(hex: "1E2536"))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .background(Color(hex: "161C2C"))
     }
 
     // -------------------------------------------------------------
@@ -316,11 +432,11 @@ public struct ChatView: View {
     // -------------------------------------------------------------
     private var roomIntroBanner: some View {
         VStack(spacing: 4) {
-            Text("🎧 Real-Time Live Music Room")
+            Text("🎧 Real-Time Live Music Group")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(Color(hex: "06B6D4"))
 
-            Text("Share your current playing song, react with emojis, or invite friends using Code: \(chatService.currentRoom.id)")
+            Text("Collaborative Playlist Active: anyone in this group can add songs and chat in real time.")
                 .font(.system(size: 11))
                 .foregroundColor(Color(hex: "64748B"))
                 .multilineTextAlignment(.center)
@@ -337,24 +453,21 @@ public struct ChatView: View {
     // -------------------------------------------------------------
     private var bottomInputBar: some View {
         VStack(spacing: 6) {
-            // Share Current Playing Track chip
+            // Share & Add to Group Playlist chip
             if let current = player.currentSong {
                 Button(action: {
-                    chatService.sendMessage(
-                        text: "🎧 Check out this track: \(current.title)",
-                        sharedSong: current
-                    )
+                    chatService.addSongToGroupPlaylist(current)
                 }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 11))
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 12))
                             .foregroundColor(Color(hex: "06B6D4"))
-                        Text("Share playing: \(current.title) - \(current.artist)")
+                        Text("Add to Group Playlist: \(current.title)")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(Color(hex: "06B6D4"))
                             .lineLimit(1)
                         Spacer()
-                        Text("Share 🚀")
+                        Text("+ Add 🚀")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 6)
@@ -483,8 +596,23 @@ public struct ChatView: View {
 
                         Spacer()
 
+                        // Add to Group Playlist Button
+                        Button(action: {
+                            chatService.addSongToGroupPlaylist(song)
+                        }) {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 15))
+                                .foregroundColor(Color(hex: "06B6D4"))
+                                .frame(width: 28, height: 28)
+                                .background(Color(hex: "1E2536"))
+                                .clipShape(Circle())
+                        }
+
                         // Play Now Button
-                        Button(action: { player.playSong(song) }) {
+                        Button(action: {
+                            player.playSong(song)
+                            chatService.syncPlaybackToGroup(song: song, isPlaying: true)
+                        }) {
                             Image(systemName: "play.fill")
                                 .font(.system(size: 14))
                                 .foregroundColor(Color(hex: "090D16"))
