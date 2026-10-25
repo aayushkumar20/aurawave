@@ -1,24 +1,96 @@
-# Gradle
+# ==============================================================================
+# Build Artifacts & Binaries (APKs, AABs, Archives)
+# ==============================================================================
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+build-artifacts/
+artifacts/
+*.ipa
+*.app
+*.dSYM/
+*.zip
+*.tar.gz
+
+# ==============================================================================
+# Keys, Certificates, Secrets & Credentials
+# ==============================================================================
+*.keystore
+*.jks
+*.key
+*.pem
+*.p8
+*.p12
+*.cer
+*.crt
+*.der
+*.mobileprovision
+*.provisionprofile
+*.secret
+*.token
+credentials.json
+service-account*.json
+secret*.json
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# ==============================================================================
+# Android / Gradle
+# ==============================================================================
 .gradle/
 build/
 android/app/build/
 android/.gradle/
 android/build/
 local.properties
+android/local.properties
+.navigation/
+captures/
+output-metadata.json
 
-# Swift / Xcode
+# ==============================================================================
+# iOS / Xcode / Swift
+# ==============================================================================
 ios/.build/
 .build/
-*.xcodeproj/*
-!*.xcodeproj/project.pbxproj
-!*.xcodeproj/xcshareddata/
-*.xcworkspace/*
-!*.xcworkspace/contents.xcworkspacedata
-!*.xcworkspace/xcshareddata/
 DerivedData/
 xcuserdata/
 *.xcuserdata
+*.xcscmblueprint
+*.xccheckout
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+!*.xcworkspace/xcshareddata/
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
 
-# OS
+# ==============================================================================
+# Node / Web
+# ==============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.firebase/
+
+# ==============================================================================
+# IDEs & System Files
+# ==============================================================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
