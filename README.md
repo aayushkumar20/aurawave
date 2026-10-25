@@ -1,134 +1,178 @@
-# Aura Music: Dual-Native Ad-Free YouTube Music Player & Chat Rooms
+# 🌊 AuraWave: Ad-Free Music Streaming & Real-Time Collaborative Lounges
 
-Aura Music is a dual-native music streaming and real-time chat application built natively in **Kotlin + Jetpack Compose** for Android and **Swift + SwiftUI** for iOS. It streams raw, high-fidelity audio directly from YouTube Music with **100% ad-blocking (zero video or audio ads)**, requiring **no Google sign-in**.
+[![Platform](https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20Web-blue.svg)](https://github.com/aayushkumar20/aurawave)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Ads](https://img.shields.io/badge/Ads-Zero%20(100%25%20Ad--Blocked)-brightgreen.svg)](#)
+[![Google Sign-In](https://img.shields.io/badge/Google%20Sign--In-None%20Required-success.svg)](#)
+[![Sync](https://img.shields.io/badge/Real--Time%20Sync-Android%20%E2%87%84%20iOS%20%E2%87%84%20Web-purple.svg)](#)
 
----
-
-## 🚀 Key Features
-
-- **100% Real-Time Live YouTube Music Streaming**:
-  - Direct Piped/Innertube bitstream extraction (Opus/AAC audio).
-  - No hardcoded lists or placeholder images: live trending charts and high-res YouTube artwork (`i.ytimg.com`).
-  - **Zero Ads**: completely filters out video ads, sponsor banners, and Google tracking.
-- **Live Search Auto-Complete & Recommendations**:
-  - Live search suggestions as you type directly from YouTube's autocomplete engine.
-- **Queue Controls**:
-  - **Play Next**: Inserts the selected song immediately after the current playing track.
-  - **Play Last**: Appends the selected song to the end of your playback queue.
-  - Full playback queue reordering and shuffle/repeat modes.
-- **Custom Playlists & Favorites**:
-  - Save songs to offline-first local favorites and create custom playlists.
-- **Real-Time Music Chat Rooms (Google Firebase Database)**:
-  - **Zero Login Friction**: Join instantly just by entering your **Name** and **Date of Birth (DOB)**.
-  - Chat rooms (`#Global Music Lounge`, `#Late Night Vibes`, `#Bass & Electronic`).
-  - **Emoji Reactions**: React to any message with emojis (❤️, 🔥, 🎧, 👏, 😂, 🚀).
-  - **Live Song Sharing Cards**: Share your currently playing song into the room with an interactive "▶ Play Now" and "Play Next" card.
-- **Background Playback & Lock-Screen Integration**:
-  - Android: `MediaSessionService` + Notification controls.
-  - iOS: `AVPlayer` + `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`.
+**AuraWave** is a high-performance, cross-platform music streaming and real-time collaborative party listening player built natively in **Kotlin + Jetpack Compose** for Android, **Swift + SwiftUI** for iOS, and a progressive **Web Player**. It streams high-fidelity audio directly from YouTube Music with **100% ad-blocking (zero audio or video ads)**, requiring **no Google sign-in**, accounts, or tracking.
 
 ---
 
-## 📱 Installation & Distribution
+## 🌟 Core Benefits & Why Use This?
 
-### 1. Android (Ready-to-Install APK)
-The compiled standalone APK is ready in the repository:
-```
-build-artifacts/AuraMusic-Android.apk (19 MB)
-```
-**To install on any Android phone:**
-1. Transfer `build-artifacts/AuraMusic-Android.apk` to your phone via USB cable, WhatsApp, Telegram, or Google Drive.
-2. Tap the file on your phone and click **Install** (enable *"Install unknown apps"* if prompted).
-3. Open **Aura Music** and enjoy ad-free music!
+| Benefit | How It Helps You |
+| :--- | :--- |
+| **🚫 Zero Google Sign-In** | No Google account, email, or credentials required. You are never tracked, profiled, or locked into proprietary ecosystem accounts. |
+| **🛡️ 100% Ad-Free (Zero Ads)** | Completely blocks all pre-roll video ads, mid-roll audio ads, popups, and sponsored banners. Uninterrupted music streaming from start to finish. |
+| **🔒 Safe, Private & Sandboxed** | Operates strictly as a client. **No open ports, no listening background servers, and no dangerous permissions**. Runs securely inside native mobile OS sandboxes. |
+| **🎧 Full Background & Lock-Screen Playback** | Keep listening with full notification drawer and lock-screen media controls (play, pause, skip, seek, artwork) on both Android and iOS while your screen is off or you are using other apps. |
+| **👥 Collaborative Group Playlists & Live Chat** | Create or join live music lounges via a simple code (e.g., `AURA-1024`). Any group member can search and add songs in real time to build a shared queue with synced playback. |
+| **⚡ Fast Live Autocomplete Search** | Instant query suggestions and track search straight from YouTube Music's high-speed catalog without lag. |
+| **💾 Completely Free & Open Source** | Zero subscription fees, zero premium paywalls, zero in-app purchases. MIT licensed for full transparency. |
 
-**To re-build the APK:**
+---
+
+## ⚙️ How It Works (Under the Hood)
+
+### 1. Direct Audio Bitstream Extraction (Ad-Bypass Architecture)
+Traditional YouTube clients load video advertisements, tracking telemetry, and heavy UI scripts before playing media. 
+- **Direct Querying**: The player queries YouTube's production **InnerTube API** and privacy-preserving extraction engines directly.
+- **Pure Audio Bitstream**: It extracts the raw high-bitrate audio streams (such as **Opus 160kbps** or **AAC 128kbps**) and streams them directly into native platform audio decoders:
+  - **Android**: Uses Google's **Jetpack Media3 / ExoPlayer** running within an independent foreground `MediaSessionService`.
+  - **iOS**: Uses Apple's **AVFoundation (`AVPlayer`)** registered with `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`.
+  - **Web**: Uses an embedded background playback coordinator with custom visualizer controls.
+- **Result**: Because ad servers and video tracking URLs are completely bypassed, you get instant playback with zero commercial interruptions.
+
+### 2. Real-Time Cross-Platform Synchronization
+Cross-platform synchronization (between Android, iOS, and Web) operates via a lightweight, zero-latency streaming pipeline:
+- **Zero-Friction Rooms**: Rooms are identified by human-readable names or codes (e.g. `room_global` or `AURA-4921`).
+- **Persistent Server-Sent Events (SSE)**: Devices connect to an active real-time pub/sub stream with an open HTTP keep-alive connection (`readTimeout = 0`).
+- **Standardized Sync Packets (`GroupSyncPacket`)**:
+  - `CHAT_MSG`: Real-time text messages and emoji reactions.
+  - `PLAYLIST_ADD`: Broadcasts when any user adds a track to the collaborative playlist, updating the queue on all room members' screens immediately.
+  - `SYNC_PLAYBACK`: Synchronizes play/pause state and playback position (timestamps) across devices.
+- **Lenient Cross-Platform Deserialization**: Swift and Kotlin handle timestamps and numbers resiliently through custom adapters, ensuring fractional and whole-millisecond epoch timestamps communicate without serialization crashes.
+
+---
+
+## 📂 Repository & Project Structure
+
+```
+aurawave/
+│
+├── AuraMusic-latest.apk       # Pre-compiled latest Android standalone APK (Ready to install)
+├── LICENSE                    # MIT Open Source License
+├── README.md                  # Comprehensive Documentation & Architecture Guide
+│
+├── android/                   # Native Android Project (Kotlin + Jetpack Compose)
+│   ├── app/
+│   │   ├── build.gradle.kts   # Android dependencies (Media3, Compose, Coil, Gson, OkHttp)
+│   │   └── src/main/
+│   │       ├── AndroidManifest.xml # Standard permissions (Internet, Media Playback Foreground Service)
+│   │       └── java/com/auramusic/app/
+│   │           ├── MainActivity.kt               # Main entry point & Jetpack Compose navigation
+│   │           ├── AuraApplication.kt           # App lifecycle container
+│   │           ├── data/
+│   │           │   ├── models/Models.kt          # Song, ChatMessage, GroupSyncPacket data classes
+│   │           │   ├── api/YouTubeMusicEngine.kt # Live search, suggestions & trending track parser
+│   │           │   └── repository/ChatManager.kt # Real-time streaming, rooms & collaborative playlist
+│   │           ├── player/
+│   │           │   ├── PlaybackManager.kt        # Audio state machine, queues (Play Next/Last)
+│   │           │   ├── PlaybackService.kt        # Background MediaSessionService for lock-screen
+│   │           │   └── YouTubeAudioEngine.kt     # Direct stream URL extractor
+│   │           └── ui/
+│   │               ├── screens/
+│   │               │   ├── HomeScreen.kt         # Trending charts & quick recommendations
+│   │               │   ├── SearchScreen.kt       # Live autocomplete & filter chips
+│   │               │   ├── LibraryScreen.kt      # Offline-first custom playlists & favorites
+│   │               │   ├── ChatScreen.kt         # Real-time room chat, in-group song search & queue
+│   │               │   └── NowPlayingSheet.kt    # Full-screen player with lyrics & visualizer
+│   │               └── theme/                    # Futuristic dark-mode design system
+│
+├── ios/                       # Native iOS Project (Swift + SwiftUI + AVFoundation)
+│   ├── AuraMusic.xcodeproj   # Xcode Project configuration
+│   ├── Package.swift          # Swift Package Manager definitions
+│   └── AuraMusic/
+│       ├── AuraMusicApp.swift                    # iOS App Entry Point
+│       ├── Info.plist                            # Background audio mode configuration
+│       ├── Models/
+│       │   └── Models.swift                      # Strongly-typed Codable Song, Room & Packet structs
+│       ├── Services/
+│       │   ├── AudioPlayerService.swift          # AVPlayer + Lock-Screen NowPlaying & Remote Commands
+│       │   ├── YouTubeMusicEngine.swift          # Live InnerTube YouTube search & stream engine
+│       │   └── ChatService.swift                 # Real-time room SSE streaming & sync manager
+│       └── Views/
+│           ├── HomeView.swift                    # iOS Trending music view
+│           ├── SearchView.swift                  # Autocomplete search & discovery
+│           ├── LibraryView.swift                 # Local playlists & favorited songs
+│           ├── ChatView.swift                    # Live room chat, collaborative playlist & search drawer
+│           └── NowPlayingView.swift              # iOS Now Playing sheet & playback controls
+│
+└── firebase/                  # Web Client & Cloud Configuration
+    ├── database.rules.json    # Realtime Database security rules
+    ├── firebase.json          # Hosting & deployment configuration
+    └── public/                # Full Web Player Client
+        ├── index.html         # Responsive web UI layout
+        ├── style.css          # Glassmorphism dark-mode CSS styles
+        └── app.js             # Web audio player, background YouTube engine, room chat & SSE sync
+```
+
+---
+
+## 📱 Installation & Getting Started
+
+### 1. Android Installation
+
+#### Option A: Install Ready APK via USB (ADB)
+If your Android phone is connected to your computer:
+```bash
+adb install -r "AuraMusic-latest.apk"
+```
+
+#### Option B: Direct Phone Download / Transfer
+1. Transfer [`AuraMusic-latest.apk`](file:///Users/aayushkumar/Desktop/Music%20player/AuraMusic-latest.apk) to your Android device via USB, Google Drive, WhatsApp, or local share.
+2. Tap the APK file and select **Install** (enable *"Install from unknown sources"* if prompted).
+3. Open **Aura Music** and start listening immediately without signing in!
+
+#### Option C: Build from Source
 ```bash
 cd android
 ./gradlew assembleDebug
 ```
+The compiled APK will be located at `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ---
 
-### 2. iOS (Install on Any iPhone)
-Because Apple restricts direct `.ipa` installation without code-signing, you can install the native Swift/SwiftUI app on **any iPhone** using one of the following methods (no paid developer account required):
+### 2. iOS Installation
 
-#### Method A: Sideloadly or AltStore (Recommended, 2 Minutes)
-1. Download **[Sideloadly](https://sideloadly.io/)** or **[AltStore](https://altstore.io/)** on your Mac/PC.
-2. Connect your iPhone to your Mac via USB cable.
-3. Open `ios/Package.swift` in Xcode or export an `.ipa`, drag it into Sideloadly, enter your Apple ID, and click **Start**.
-4. The app installs directly onto your iPhone! (Go to *Settings > General > VPN & Device Management* and tap *Trust*).
+Because Apple requires code-signing on physical iOS devices, you can install the native app on **any iPhone** using one of the following methods:
 
-#### Method B: Direct Xcode Run (Immediate on Mac)
+#### Method A: Xcode Direct Install (Free)
 1. Open the project in Xcode:
    ```bash
-   open ios/Package.swift
+   open ios/AuraMusic.xcodeproj
    ```
-2. Connect your iPhone via USB, select your device in the top device toolbar, and hit **Cmd + R (Run)**.
-3. The native app will install and launch instantly on your iPhone.
+2. Connect your iPhone via USB.
+3. Select your iPhone as the build target in Xcode's top bar.
+4. Under `Signing & Capabilities`, choose your free personal Apple ID Team.
+5. Press `Cmd + R` to build and run. The app will install directly onto your iPhone.
+
+#### Method B: Sideloading (AltStore or Sideloadly)
+1. Download [Sideloadly](https://sideloadly.io/) or [AltStore](https://altstore.io/).
+2. Build the `.ipa` or load the Xcode project file.
+3. Sideload the app using your Apple ID (valid for 7 days on free developer accounts).
 
 ---
 
-### 3. Web Player (Instant Browser Experience)
-The Firebase web player is located in `firebase/public/` with full live playback, autocomplete search, and real-time room chat.
-To run locally in 1 click:
-```bash
-./start-web-player.sh
-```
-Or with npx:
+### 3. Web Player (Any Browser)
+To run the web player locally:
 ```bash
 npx serve firebase/public
 ```
+Or open `firebase/public/index.html` in your web browser.
 
 ---
 
-## 🔥 Google Firebase Integration
+## 🔒 Security & Privacy Policy
 
-Aura Music connects seamlessly to Firebase Realtime Database for real-time room chat and emoji sync:
-- Frictionless room entry with **Name** and **DOB** (no password or Google sign-in required).
-- Works with standard Firebase Realtime Database endpoints and local emulators.
-- Out of the box, it includes real-time synchronization so that messages, reactions, and song cards immediately sync between Android, iOS, and Web.
-
-To deploy to your Firebase project:
-```bash
-cd firebase
-firebase deploy
-```
-
----
-
-## 📂 Repository Structure
-
-```
-├── android/               # Native Android (Kotlin + Jetpack Compose + Media3)
-│   ├── app/src/main/
-│   │   ├── AndroidManifest.xml
-│   │   └── java/com/auramusic/app/
-│   │       ├── MainActivity.kt
-│   │       ├── data/api/YouTubeMusicEngine.kt
-│   │       ├── player/PlaybackManager.kt
-│   │       ├── repository/ChatManager.kt
-│   │       └── ui/screens/ (HomeScreen, SearchScreen, LibraryScreen, ChatScreen, NowPlayingSheet)
-├── ios/                   # Native iOS (Swift + SwiftUI + AVPlayer)
-│   ├── Package.swift
-│   └── AuraMusic/
-│       ├── AuraMusicApp.swift
-│       ├── Info.plist
-│       ├── Services/ (YouTubeMusicEngine.swift, AudioPlayerService.swift, ChatService.swift)
-│       └── Views/ (HomeView, SearchView, LibraryView, ChatView, NowPlayingView)
-├── firebase/              # Firebase Hosting, Database & Rules
-│   ├── database.rules.json
-│   ├── firestore.rules
-│   ├── firebase.json
-│   ├── .firebaserc
-│   ├── google-services.json
-│   ├── GoogleService-Info.plist
-│   └── public/            # Complete Web Player (HTML, CSS, JS)
-├── build-artifacts/
-│   └── AuraMusic-Android.apk  # Ready-to-transfer Android APK (19 MB)
-└── start-web-player.sh    # Instant 1-click web player launcher
-```
+- **No Inbound Open Ports**: The application functions 100% as an outbound client. It never listens on network sockets or binds local web servers.
+- **No Dangerous Permissions**: It does not access your location, contacts, camera, photos, SMS, or phone state.
+- **No Tracking Telemetry**: Built without advertising trackers, analytics SDKs, or commercial spyware.
 
 ---
 
 ## 📄 License
-MIT
+This project is open-source under the [MIT License](LICENSE).
+Feel free to contribute, fork, and enhance the experience!
