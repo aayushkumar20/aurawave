@@ -1,7 +1,9 @@
 package com.auramusic.app.player
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -37,6 +39,96 @@ object PlaybackManager {
 
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus = false
+    private var pausedByTransientFocusLoss = false
+    private var isNoisyReceiverRegistered = false
+
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                Log.d("AuraPlayback", "ACTION_AUDIO_BECOMING_NOISY: Audio output changed -> pausing")
+                pause()
+            }
+        }
+    }
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        Log.d("AuraPlayback", "onAudioFocusChange: $focusChange")
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                // Permanent loss: another audio app took over (e.g. user played music in Spotify)
+                Log.d("AuraPlayback", "AUDIOFOCUS_LOSS: Permanent focus loss -> pausing")
+                pausedByTransientFocusLoss = false
+                hasAudioFocus = false
+                pauseInternal()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Transient loss: user opened video/status in Instagram, WhatsApp, TikTok, phone call
+                Log.d("AuraPlayback", "AUDIOFOCUS_LOSS_TRANSIENT: External video/sound started -> pausing immediately")
+                if (_isPlaying.value) {
+                    pausedByTransientFocusLoss = true
+                    pauseInternal()
+                }
+                hasAudioFocus = false
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // Focus regained: external video/status ended, resume playback automatically
+                Log.d("AuraPlayback", "AUDIOFOCUS_GAIN: Regained focus (wasTransientPaused=$pausedByTransientFocusLoss)")
+                hasAudioFocus = true
+                if (pausedByTransientFocusLoss) {
+                    pausedByTransientFocusLoss = false
+                    playInternal()
+                }
+            }
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        val am = audioManager ?: return false
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (audioFocusRequest == null) {
+                val audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+
+                audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(audioAttributes)
+                    .setAcceptsDelayedFocusGain(true)
+                    .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                    .build()
+            }
+            am.requestAudioFocus(audioFocusRequest!!)
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+
+        hasAudioFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        Log.d("AuraPlayback", "requestAudioFocus: result=$result (granted=$hasAudioFocus)")
+        return hasAudioFocus
+    }
+
+    private fun abandonAudioFocus() {
+        try {
+            val am = audioManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(audioFocusChangeListener)
+            }
+        } catch (e: Exception) {
+            Log.e("AuraPlayback", "abandonAudioFocus failed: $e")
+        } finally {
+            hasAudioFocus = false
+        }
+    }
 
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
@@ -83,6 +175,21 @@ object PlaybackManager {
 
         audioManager = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
+        // Register noisy audio receiver (pauses when headphones/Bluetooth disconnected)
+        if (!isNoisyReceiverRegistered) {
+            try {
+                val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    app.registerReceiver(noisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    app.registerReceiver(noisyReceiver, filter)
+                }
+                isNoisyReceiverRegistered = true
+            } catch (e: Exception) {
+                Log.e("AuraPlayback", "Failed to register noisy receiver: $e")
+            }
+        }
+
         try {
             val powerManager = app.getSystemService(Context.POWER_SERVICE) as? PowerManager
             wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AuraMusic:PlaybackWakeLock")?.apply {
@@ -101,15 +208,8 @@ object PlaybackManager {
                     startServiceAndAcquireWakeLock()
                 }
                 2 -> {
-                    if (isUserInitiatedPause) {
-                        _isPlaying.value = false
-                        releaseWakeLock()
-                    } else {
-                        // System / lock screen attempted to pause; keep playing!
-                        Log.d("AuraPlayback", "State 2 received without user pause request; auto-resuming!")
-                        startServiceAndAcquireWakeLock()
-                        youTubeAudioEngine?.resume()
-                    }
+                    _isPlaying.value = false
+                    releaseWakeLock()
                 }
                 0 -> {
                     if (_currentPositionMs.value > 3000L) {
@@ -216,27 +316,44 @@ object PlaybackManager {
         _currentSong.value = song
         _currentPositionMs.value = 0L
         _durationMs.value = if (song.durationMs > 0) song.durationMs else 210_000L
-        _isPlaying.value = true
         isUserInitiatedPause = false
+        pausedByTransientFocusLoss = false
 
-        startServiceAndAcquireWakeLock()
-
-        // Play via YouTube Audio Engine (100% complete full song, identical to iOS)
-        youTubeAudioEngine?.playTrack(song.id)
+        if (requestAudioFocus()) {
+            _isPlaying.value = true
+            startServiceAndAcquireWakeLock()
+            // Play via YouTube Audio Engine (100% complete full song, identical to iOS)
+            youTubeAudioEngine?.playTrack(song.id)
+        }
     }
 
-    fun play() {
-        isUserInitiatedPause = false
+    private fun playInternal() {
+        if (!requestAudioFocus()) {
+            Log.w("AuraPlayback", "playInternal: Audio focus request failed or delayed")
+            return
+        }
         startServiceAndAcquireWakeLock()
         youTubeAudioEngine?.resume()
         _isPlaying.value = true
     }
 
-    fun pause() {
-        isUserInitiatedPause = true
+    private fun pauseInternal() {
         releaseWakeLock()
         youTubeAudioEngine?.pause()
         _isPlaying.value = false
+    }
+
+    fun play() {
+        isUserInitiatedPause = false
+        pausedByTransientFocusLoss = false
+        playInternal()
+    }
+
+    fun pause() {
+        isUserInitiatedPause = true
+        pausedByTransientFocusLoss = false
+        abandonAudioFocus()
+        pauseInternal()
     }
 
     fun togglePlayPause() {
@@ -355,8 +472,17 @@ object PlaybackManager {
                 seekTo(0)
                 play()
             }
-            RepeatMode.ALL, RepeatMode.OFF -> {
+            RepeatMode.ALL -> {
                 skipNext()
+            }
+            RepeatMode.OFF -> {
+                val q = _queue.value
+                if (_currentIndex.value < q.size - 1) {
+                    skipNext()
+                } else {
+                    abandonAudioFocus()
+                    pauseInternal()
+                }
             }
         }
     }

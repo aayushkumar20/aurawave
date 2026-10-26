@@ -37,18 +37,20 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
     // Native Silent Audio Keep-Alive Loop for 100% Lock Screen & Background Playback
     private var keepAlivePlayer: AVAudioPlayer?
     private var isUserInitiatedPause: Bool = false
+    private var pausedByInterruption: Bool = false
 
     private override init() {
         super.init()
         configureAudioSession()
         setupKeepAliveAudio()
+        setupAudioObservers()
         setupBackgroundWebView()
         setupRemoteCommandCenter()
         loadLiveTrending()
     }
 
     // -------------------------------------------------------------
-    // Audio Session: Guaranteed Speaker / AirPods Output (Async)
+    // Audio Session: Industry-Standard Exclusive Playback (Spotify / Apple Music)
     // -------------------------------------------------------------
     public func configureAudioSession() {
         #if os(iOS)
@@ -58,7 +60,7 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
                 .playback,
                 mode: .default,
                 policy: .default,
-                options: [.mixWithOthers, .allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
+                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
             )
             try session.setActive(true)
         } catch {
@@ -112,6 +114,126 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         } catch {
             print("[Aura Audio] Failed to create keepAlivePlayer: \(error)")
         }
+    }
+
+    // -------------------------------------------------------------
+    // Audio Focus & Interruption Listeners (Matches Apple Music & Spotify)
+    // -------------------------------------------------------------
+    private func setupAudioObservers() {
+        #if os(iOS)
+        let nc = NotificationCenter.default
+
+        // 1. Audio Session Interruption: phone calls, Siri, Camera recording, external apps taking exclusive focus
+        nc.addObserver(
+            self,
+            selector: #selector(handleAudioInterruption(notification:)),
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+
+        // 2. Secondary Audio Hint: Instagram Reels, TikTok, WhatsApp status videos, external audio
+        nc.addObserver(
+            self,
+            selector: #selector(handleSecondaryAudioHint(notification:)),
+            name: AVAudioSession.silenceSecondaryAudioHintNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+
+        // 3. Audio Route Change: AirPods disconnected, headphone unplugged
+        nc.addObserver(
+            self,
+            selector: #selector(handleAudioRouteChange(notification:)),
+            name: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+        #endif
+    }
+
+    @objc private func handleAudioInterruption(notification: Notification) {
+        #if os(iOS)
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let interruptionType = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            switch interruptionType {
+            case .began:
+                print("[Aura Audio] Audio interruption began (phone call / Siri / external media)")
+                if self.isPlaying {
+                    self.pausedByInterruption = true
+                    self.pauseInternal()
+                }
+            case .ended:
+                print("[Aura Audio] Audio interruption ended")
+                guard self.pausedByInterruption else { return }
+                self.pausedByInterruption = false
+
+                if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                    let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                    if options.contains(.shouldResume) {
+                        print("[Aura Audio] Resuming audio after interruption")
+                        self.playInternal()
+                    }
+                }
+            @unknown default:
+                break
+            }
+        }
+        #endif
+    }
+
+    @objc private func handleSecondaryAudioHint(notification: Notification) {
+        #if os(iOS)
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionSilenceSecondaryAudioHintTypeKey] as? UInt,
+              let hintType = AVAudioSession.SilenceSecondaryAudioHintType(rawValue: typeValue) else {
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            switch hintType {
+            case .begin:
+                print("[Aura Audio] Secondary audio hint began (external video/status playing) -> pausing")
+                if self.isPlaying {
+                    self.pausedByInterruption = true
+                    self.pauseInternal()
+                }
+            case .end:
+                print("[Aura Audio] Secondary audio hint ended -> resuming")
+                if self.pausedByInterruption {
+                    self.pausedByInterruption = false
+                    self.playInternal()
+                }
+            @unknown default:
+                break
+            }
+        }
+        #endif
+    }
+
+    @objc private func handleAudioRouteChange(notification: Notification) {
+        #if os(iOS)
+        guard let userInfo = notification.userInfo,
+              let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return
+        }
+
+        if reason == .oldDeviceUnavailable {
+            // E.g., AirPods disconnected or headphone unplugged -> pause automatically like Spotify & Apple Music
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if self.isPlaying {
+                    print("[Aura Audio] Audio route unavailable (AirPods disconnected) -> pausing")
+                    self.pause()
+                }
+            }
+        }
+        #endif
     }
 
     // -------------------------------------------------------------
@@ -290,34 +412,6 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
             try { player.playVideo(); } catch(e) {}
           }
         });
-
-        // Intercept any unwanted pause event from iOS WebKit when screen locks
-        document.addEventListener("pause", function(e) {
-          if (!isUserPaused && player && typeof player.playVideo === 'function') {
-            try { player.playVideo(); } catch(err) {}
-          }
-        }, true);
-
-        // Active Watchdog: Auto-resumes within 200ms if lock screen triggers unexpected pause
-        setInterval(function() {
-          if (!isUserPaused) {
-            try {
-              var vids = document.querySelectorAll('video');
-              for (var i = 0; i < vids.length; i++) {
-                if (vids[i].paused) {
-                  vids[i].play();
-                }
-              }
-            } catch(e) {}
-            if (isReady && player && typeof player.getPlayerState === 'function') {
-              try {
-                if (player.getPlayerState() === 2) {
-                  player.playVideo();
-                }
-              } catch(err) {}
-            }
-          }
-        }, 200);
         </script>
         </body>
         </html>
@@ -342,12 +436,13 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
                 if let state = dict["state"] as? Int {
                     if state == 1 { // Playing
                         self.isPlaying = true
+                        if let song = self.currentSong {
+                            self.updateNowPlayingInfo(song: song)
+                        }
                     } else if state == 2 { // Paused
-                        if self.isUserInitiatedPause {
-                            self.isPlaying = false
-                        } else {
-                            // System or lock screen attempted to pause; keep playing!
-                            self.webView?.evaluateJavaScript("resumeTrack();")
+                        self.isPlaying = false
+                        if let song = self.currentSong {
+                            self.updateNowPlayingInfo(song: song)
                         }
                     } else if state == 0 { // Ended
                         if self.repeatMode == .one {
@@ -395,9 +490,10 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
     // Playback Controls (100% COMPLETE FULL SONGS WITH REAL SOUND)
     // -------------------------------------------------------------
     public func playSong(_ song: Song) {
+        pausedByInterruption = false
+        isUserInitiatedPause = false
         configureAudioSession()
         keepAlivePlayer?.play()
-        isUserInitiatedPause = false
 
         if let idx = queue.firstIndex(where: { $0.id == song.id }) {
             currentIndex = idx
@@ -430,19 +526,38 @@ public final class AudioPlayerService: NSObject, ObservableObject, WKNavigationD
         }
     }
 
-    public func play() {
+    private func playInternal() {
         configureAudioSession()
         keepAlivePlayer?.play()
         isUserInitiatedPause = false
         webView?.evaluateJavaScript("resumeTrack();")
         isPlaying = true
+        if let song = currentSong {
+            updateNowPlayingInfo(song: song)
+        }
+    }
+
+    private func pauseInternal() {
+        keepAlivePlayer?.pause()
+        webView?.evaluateJavaScript("pauseTrack();")
+        isPlaying = false
+        if let song = currentSong {
+            updateNowPlayingInfo(song: song)
+        }
+    }
+
+    public func play() {
+        pausedByInterruption = false
+        playInternal()
     }
 
     public func pause() {
         isUserInitiatedPause = true
-        keepAlivePlayer?.pause()
-        webView?.evaluateJavaScript("pauseTrack();")
-        isPlaying = false
+        pausedByInterruption = false
+        pauseInternal()
+        #if os(iOS)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     public func seek(to seconds: Double) {
