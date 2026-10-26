@@ -222,24 +222,6 @@ class YouTubeAudioEngine(private val context: Context) {
             try { player.playVideo(); } catch(e) {}
           }
         });
-
-        // Intercept any unwanted pause event from OS/Chromium when screen is locked
-        document.addEventListener("pause", function(e) {
-          if (!isUserPaused && player && typeof player.playVideo === 'function') {
-            try { player.playVideo(); } catch(err) {}
-          }
-        }, true);
-
-        // Active Watchdog: Auto-resumes within 250ms if lock screen triggers unexpected pause
-        setInterval(function() {
-          if (!isUserPaused && isReady && player && typeof player.getPlayerState === 'function') {
-            try {
-              if (player.getPlayerState() === 2) {
-                player.playVideo();
-              }
-            } catch(err) {}
-          }
-        }, 250);
         </script>
         </body>
         </html>
